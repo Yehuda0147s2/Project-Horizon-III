@@ -39,39 +39,59 @@ export interface FloatingText {
   life: number;
 }
 
-/**
- * Procedural continuous ground height function
- * Includes natural perimeter cliffs beyond radius 34m
- */
-export function getGroundHeight(x: number, z: number): number {
-  const base =
-    Math.sin(x * 0.06) * Math.cos(z * 0.06) * 1.4 +
-    Math.sin(x * 0.12 + 1.5) * 0.6 +
-    Math.cos(z * 0.15 - 0.7) * 0.5;
-
-  const dist = Math.hypot(x, z);
-  if (dist > 34) {
-    const cliffFactor = Math.min((dist - 34) * 0.8, 14);
-    return base + cliffFactor;
-  }
-  return base;
+function fract(value: number): number {
+  return value - Math.floor(value);
 }
 
-/**
- * Builds the terrain mesh with procedural grassy meadow vertex colors & normals
- */
-export function createTerrainMesh(): THREE.Mesh {
-  const size = 100;
-  const segments = 90;
+function hash2D(x: number, z: number): number {
+  return fract(Math.sin(x * 127.1 + z * 311.7) * 43758.5453123);
+}
+
+function smoothstep(a: number, b: number, value: number): number {
+  const t = Math.min(Math.max((value - a) / (b - a), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+function fbm(x: number, z: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let freq = 1;
+  let norm = 0;
+
+  for (let i = 0; i < 5; i++) {
+    const sampleX = x * freq;
+    const sampleZ = z * freq;
+    const n = hash2D(Math.floor(sampleX), Math.floor(sampleZ));
+    sum += n * amp;
+    norm += amp;
+    amp *= 0.52;
+    freq *= 2.08;
+  }
+
+  return sum / norm;
+}
+
+export function getGroundHeight(x: number, z: number): number {
+  const ridge = Math.sin(x * 0.11) * Math.cos(z * 0.09) * 1.35;
+  const rolling = Math.sin(x * 0.06 + 2.8) * 0.8 + Math.cos(z * 0.08 - 1.6) * 0.6;
+  const detail = fbm(x * 0.35 + 12.1, z * 0.35 - 6.9) * 1.8;
+  const radial = Math.hypot(x, z);
+  const valley = smoothstep(28, 36, radial) * 2.5;
+  const cliff = Math.max(0, radial - 34) * 0.9;
+
+  return ridge + rolling + detail - valley + cliff * 0.55;
+}
+
+export function createTerrainMesh(size = 160, segments = 220): THREE.Mesh {
   const geo = new THREE.PlaneGeometry(size, size, segments, segments);
   geo.rotateX(-Math.PI / 2);
 
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const colorGrassLow = new THREE.Color(0x356637);
-  const colorGrassHigh = new THREE.Color(0x4d8847);
-  const colorDirt = new THREE.Color(0x5a4833);
-  const colorRock = new THREE.Color(0x575f6d);
+  const grassLow = new THREE.Color(0x2f6d3f);
+  const grassHigh = new THREE.Color(0x69b265);
+  const dirt = new THREE.Color(0x6b4c34);
+  const rock = new THREE.Color(0x5b6673);
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -81,12 +101,16 @@ export function createTerrainMesh(): THREE.Mesh {
 
     const dist = Math.hypot(x, z);
     const c = new THREE.Color();
-    if (dist > 35) {
-      c.lerpColors(colorDirt, colorRock, Math.min((dist - 35) / 10, 1.0));
-    } else if (y > 1.2) {
-      c.lerpColors(colorGrassLow, colorGrassHigh, (y - 1.2) / 1.5);
+
+    if (dist > 36) {
+      const t = Math.min((dist - 36) / 18, 1);
+      c.lerpColors(dirt, rock, t);
+    } else if (y > 1.6) {
+      const t = Math.min(Math.max((y - 1.6) / 3.5, 0), 1);
+      c.lerpColors(grassLow, grassHigh, t);
     } else {
-      c.lerpColors(colorDirt, colorGrassLow, Math.max(0, (y + 1.5) / 2.5));
+      const t = Math.min(Math.max((1.6 - y) / 2.5, 0), 1);
+      c.lerpColors(dirt, grassLow, 1 - t);
     }
 
     colors[i * 3] = c.r;
@@ -99,9 +123,9 @@ export function createTerrainMesh(): THREE.Mesh {
 
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.85,
-    metalness: 0.1,
-    flatShading: true,
+    roughness: 0.9,
+    metalness: 0.08,
+    flatShading: false,
   });
 
   const terrain = new THREE.Mesh(geo, mat);
@@ -110,126 +134,129 @@ export function createTerrainMesh(): THREE.Mesh {
   return terrain;
 }
 
-/**
- * Spawns initial gatherable resource nodes deterministically
- */
-export function populateResourceNodes(scene: THREE.Scene): ResourceNode[] {
-  const nodes: ResourceNode[] = [];
-  const coords = [
-    // Trees
-    { type: 'tree_pine' as const, x: -6, z: -8, hp: 4 },
-    { type: 'tree_pine' as const, x: -9, z: -12, hp: 4 },
-    { type: 'tree_oak' as const, x: 7, z: -7, hp: 4 },
-    { type: 'tree_pine' as const, x: 12, z: -4, hp: 4 },
-    { type: 'tree_oak' as const, x: -14, z: 4, hp: 4 },
-    { type: 'tree_pine' as const, x: -8, z: 12, hp: 4 },
-    { type: 'tree_oak' as const, x: 6, z: 14, hp: 4 },
-    { type: 'tree_pine' as const, x: 15, z: 10, hp: 4 },
-    { type: 'tree_oak' as const, x: -18, z: -10, hp: 4 },
-    { type: 'tree_pine' as const, x: 18, z: -14, hp: 4 },
-    { type: 'tree_pine' as const, x: -5, z: 22, hp: 4 },
-    { type: 'tree_oak' as const, x: 22, z: 4, hp: 4 },
+export function createTerrainChunk(centerX: number, centerZ: number, size = 48, segments = 56): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+  geo.rotateX(-Math.PI / 2);
 
-    // Rocks
-    { type: 'stone' as const, x: -12, z: -3, hp: 5 },
-    { type: 'stone' as const, x: 10, z: 3, hp: 5 },
-    { type: 'stone' as const, x: 3, z: -14, hp: 5 },
-    { type: 'stone' as const, x: -4, z: 16, hp: 5 },
-    { type: 'stone' as const, x: 16, z: -8, hp: 5 },
-    { type: 'stone' as const, x: -20, z: 8, hp: 5 },
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const localX = pos.getX(i);
+    const localZ = pos.getZ(i);
+    pos.setX(i, centerX + localX);
+    pos.setZ(i, centerZ + localZ);
+    pos.setY(i, getGroundHeight(centerX + localX, centerZ + localZ));
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
 
-    // Crystals
-    { type: 'crystal' as const, x: 14, z: 18, hp: 3 },
-    { type: 'crystal' as const, x: -16, z: -18, hp: 3 },
-    { type: 'crystal' as const, x: -15, z: 19, hp: 3 },
-    { type: 'crystal' as const, x: 19, z: -20, hp: 3 },
-  ];
-
-  coords.forEach((item, index) => {
-    const y = getGroundHeight(item.x, item.z);
-    let mesh: THREE.Group;
-    if (item.type === 'tree_pine') {
-      mesh = createTreeMesh('pine');
-    } else if (item.type === 'tree_oak') {
-      mesh = createTreeMesh('oak');
-    } else {
-      mesh = createResourceNodeMesh(item.type);
-    }
-
-    mesh.position.set(item.x, y, item.z);
-    mesh.rotation.y = (index * 1.37) % (Math.PI * 2);
-    // Subtle scale variation (±15%) as per Three.js directives
-    const scale = 0.85 + (index % 5) * 0.07;
-    mesh.scale.set(scale, scale, scale);
-
-    scene.add(mesh);
-
-    nodes.push({
-      id: `res_${index}`,
-      type: item.type,
-      position: mesh.position,
-      health: item.hp,
-      maxHealth: item.hp,
-      mesh,
-      shakeTime: 0,
-      shakeAngle: 0,
-    });
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x73b55f,
+    roughness: 0.92,
+    metalness: 0.08,
+    flatShading: false,
   });
+  const chunk = new THREE.Mesh(geo, mat);
+  chunk.name = `terrainChunk_${centerX}_${centerZ}`;
+  chunk.receiveShadow = true;
+  chunk.castShadow = false;
+  return chunk;
+}
+
+export function populateResourceNodes(scene: THREE.Scene, centerX = 0, centerZ = 0, radius = 40): ResourceNode[] {
+  const nodes: ResourceNode[] = [];
+  const sampleRadius = Math.ceil(radius / 8);
+
+  for (let gx = -sampleRadius; gx <= sampleRadius; gx++) {
+    for (let gz = -sampleRadius; gz <= sampleRadius; gz++) {
+      const worldX = gx * 8 + (Math.sin(gx * 1.7 + gz * 2.3) * 1.8);
+      const worldZ = gz * 8 + (Math.cos(gx * 2.1 - gz * 1.9) * 1.7);
+      if (Math.hypot(worldX - centerX, worldZ - centerZ) > radius) continue;
+
+      const noise = hash2D(Math.round(worldX * 10), Math.round(worldZ * 10));
+      let type: ResourceNode['type'];
+
+      if (noise > 0.76) {
+        type = 'tree_pine';
+      } else if (noise > 0.55) {
+        type = 'tree_oak';
+      } else if (noise > 0.35) {
+        type = 'stone';
+      } else {
+        type = 'crystal';
+      }
+
+      const nodeMesh = type === 'tree_pine' || type === 'tree_oak'
+        ? createTreeMesh(type === 'tree_pine' ? 'pine' : 'oak')
+        : createResourceNodeMesh(type);
+
+      const y = getGroundHeight(worldX, worldZ);
+      nodeMesh.position.set(worldX, y, worldZ);
+      nodeMesh.rotation.y = noise * Math.PI * 2;
+      nodeMesh.scale.setScalar(0.8 + noise * 0.5);
+      scene.add(nodeMesh);
+
+      nodes.push({
+        id: `res_${gx}_${gz}`,
+        type,
+        position: nodeMesh.position.clone(),
+        health: type === 'crystal' ? 3 : type === 'stone' ? 5 : 4,
+        maxHealth: type === 'crystal' ? 3 : type === 'stone' ? 5 : 4,
+        mesh: nodeMesh,
+        shakeTime: 0,
+        shakeAngle: 0,
+      });
+    }
+  }
 
   return nodes;
 }
 
-/**
- * High-performance pooled particle system for impact splinters and smoke
- */
 export class ParticleSystem {
   private particles: Particle[] = [];
-  private maxParticles = 250;
-  private pGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-  private instMesh: THREE.InstancedMesh;
+  private maxParticles = 280;
+  private geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  private mesh: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
 
   constructor(scene: THREE.Scene) {
-    const pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.instMesh = new THREE.InstancedMesh(this.pGeo, pMat, this.maxParticles);
-    this.instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.instMesh.frustumCulled = false;
-    scene.add(this.instMesh);
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.mesh = new THREE.InstancedMesh(this.geometry, material, this.maxParticles);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
 
-    // Initialize all offscreen
     for (let i = 0; i < this.maxParticles; i++) {
       this.dummy.position.set(0, -999, 0);
       this.dummy.scale.set(0, 0, 0);
       this.dummy.updateMatrix();
-      this.instMesh.setMatrixAt(i, this.dummy.matrix);
-      this.instMesh.setColorAt(i, new THREE.Color(0xffffff));
+      this.mesh.setMatrixAt(i, this.dummy.matrix);
+      this.mesh.setColorAt(i, new THREE.Color(0xffffff));
     }
-    this.instMesh.instanceMatrix.needsUpdate = true;
-    if (this.instMesh.instanceColor) this.instMesh.instanceColor.needsUpdate = true;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
-  public burst(pos: THREE.Vector3, colorHex: number, count = 12): void {
-    const col = new THREE.Color(colorHex);
+  burst(pos: THREE.Vector3, colorHex: number, count = 12): void {
+    const color = new THREE.Color(colorHex);
     for (let i = 0; i < count; i++) {
       if (this.particles.length >= this.maxParticles) {
         this.particles.shift();
       }
       const angle = Math.random() * Math.PI * 2;
-      const speed = 1.5 + Math.random() * 3.5;
-      const up = 2.0 + Math.random() * 3.0;
-
+      const speed = 1.7 + Math.random() * 3.5;
+      const up = 1.8 + Math.random() * 2.7;
       this.particles.push({
-        position: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.4)),
+        position: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.8, (Math.random() - 0.5) * 0.5)),
         velocity: new THREE.Vector3(Math.cos(angle) * speed, up, Math.sin(angle) * speed),
-        color: col,
-        size: 0.1 + Math.random() * 0.14,
+        color,
+        size: 0.08 + Math.random() * 0.16,
         life: 0,
-        maxLife: 0.5 + Math.random() * 0.4,
+        maxLife: 0.45 + Math.random() * 0.5,
       });
     }
   }
 
-  public update(dt: number): void {
+  update(dt: number): void {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.life += dt;
@@ -237,20 +264,19 @@ export class ParticleSystem {
         this.particles.splice(i, 1);
         continue;
       }
-      p.velocity.y -= 12 * dt; // gravity
+
+      p.velocity.y -= 12 * dt;
       p.position.addScaledVector(p.velocity, dt);
 
-      // Floor bounce / clamp
       const floor = getGroundHeight(p.position.x, p.position.z);
-      if (p.position.y < floor + 0.05) {
-        p.position.y = floor + 0.05;
-        p.velocity.y *= -0.3;
-        p.velocity.x *= 0.6;
-        p.velocity.z *= 0.6;
+      if (p.position.y < floor + 0.06) {
+        p.position.y = floor + 0.06;
+        p.velocity.y *= -0.32;
+        p.velocity.x *= 0.62;
+        p.velocity.z *= 0.62;
       }
     }
 
-    // Update InstancedMesh
     for (let i = 0; i < this.maxParticles; i++) {
       if (i < this.particles.length) {
         const p = this.particles[i];
@@ -259,19 +285,21 @@ export class ParticleSystem {
         this.dummy.position.copy(p.position);
         this.dummy.scale.set(scale, scale, scale);
         this.dummy.rotation.x += dt * 5;
-        this.dummy.rotation.y += dt * 5;
+        this.dummy.rotation.y += dt * 4;
         this.dummy.updateMatrix();
-        this.instMesh.setMatrixAt(i, this.dummy.matrix);
-        this.instMesh.setColorAt(i, p.color);
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+        this.mesh.setColorAt(i, p.color);
       } else {
         this.dummy.position.set(0, -999, 0);
         this.dummy.scale.set(0, 0, 0);
         this.dummy.updateMatrix();
-        this.instMesh.setMatrixAt(i, this.dummy.matrix);
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
       }
     }
 
-    this.instMesh.instanceMatrix.needsUpdate = true;
-    if (this.instMesh.instanceColor) this.instMesh.instanceColor.needsUpdate = true;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 }
+
+export { createTreeMesh, createResourceNodeMesh, createStructureModel };
