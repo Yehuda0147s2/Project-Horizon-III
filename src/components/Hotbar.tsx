@@ -3,11 +3,27 @@ import { BLUEPRINTS } from '../game/GameEngine';
 
 interface HotbarProps {
   isBuildMode: boolean;
-  selectedBlueprint: string;
+  selectedBlueprint?: string;
   onToggleBuildMode: () => void;
   onSelectBlueprint: (id: string) => void;
-  inventory: { wood: number; stone: number; crystal: number };
+  inventory?: unknown[];
 }
+
+type MenuTab = 'weapons' | 'powers';
+
+const WEAPON_PRESETS = [
+  { id: 'sword', label: 'Sword', icon: '⚔️', accent: 'from-cyan-500 to-sky-500' },
+  { id: 'axe', label: 'Axe', icon: '🪓', accent: 'from-orange-500 to-amber-500' },
+  { id: 'bow', label: 'Bow', icon: '🏹', accent: 'from-violet-500 to-fuchsia-500' },
+  { id: 'staff', label: 'Staff', icon: '🪄', accent: 'from-emerald-500 to-teal-500' },
+];
+
+const POWER_PRESETS = [
+  { id: 'fireball', label: 'Fireball', icon: '🔥', accent: 'from-red-500 to-orange-500' },
+  { id: 'storm', label: 'Storm', icon: '⚡', accent: 'from-sky-500 to-cyan-500' },
+  { id: 'shield', label: 'Shield', icon: '🛡️', accent: 'from-indigo-500 to-blue-500' },
+  { id: 'heal', label: 'Heal', icon: '✨', accent: 'from-emerald-500 to-lime-500' },
+];
 
 export const Hotbar: React.FC<HotbarProps> = ({
   isBuildMode,
@@ -16,80 +32,149 @@ export const Hotbar: React.FC<HotbarProps> = ({
   onSelectBlueprint,
   inventory,
 }) => {
+  const [activeTab, setActiveTab] = React.useState<MenuTab>('weapons');
+  const visibleInventory = Array.isArray(inventory) ? inventory.slice(0, 4) : [];
+
+  const activeItems = activeTab === 'weapons' ? WEAPON_PRESETS : POWER_PRESETS;
+
   return (
     <div
       id="hotbar"
       data-hud
-      className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto z-30 select-none flex flex-col items-center gap-2 max-w-[95vw]"
+      className="pointer-events-auto z-30 select-none absolute bottom-4 left-1/2 -translate-x-1/2 w-[min(92vw,980px)]"
       onMouseDown={(e) => e.preventDefault()}
     >
-      {/* Blueprint Sub-bar (Only expanded when in build mode) */}
       {isBuildMode && (
         <div
           data-hud
-          className="flex items-center gap-1.5 p-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl shadow-xl overflow-x-auto max-w-[92vw]"
+          className="mb-3 flex max-w-full items-center gap-2 overflow-x-auto rounded-2xl border border-cyan-500/30 bg-slate-950/80 p-2 shadow-[0_10px_30px_rgba(14,165,233,0.16)] backdrop-blur-md"
         >
           {BLUEPRINTS.map((bp) => {
             const isSelected = selectedBlueprint === bp.id;
-            const canAfford =
-              inventory.wood >= bp.cost.wood &&
-              inventory.stone >= bp.cost.stone &&
-              inventory.crystal >= bp.cost.crystal;
-
             return (
               <button
                 key={bp.id}
-                data-hud
+                type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onSelectBlueprint(bp.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex flex-col items-center whitespace-nowrap transition-all ${
+                className={`group min-w-[112px] rounded-xl border px-2.5 py-2 text-left transition-all ${
                   isSelected
-                    ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(56,189,248,0.4)]'
-                    : canAfford
-                    ? 'bg-slate-800/80 text-slate-200 hover:bg-slate-700'
-                    : 'bg-slate-800/40 text-slate-500 border border-red-500/30'
+                    ? 'border-cyan-400 bg-cyan-500/20 shadow-[0_0_18px_rgba(34,211,238,0.35)]'
+                    : 'border-slate-700 bg-slate-900/70 hover:border-slate-500 hover:bg-slate-800/80'
                 }`}
               >
-                <span>{bp.name}</span>
-                <span className="text-[10px] opacity-80 font-mono">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">
+                  <span>{bp.name}</span>
+                  <span className="text-cyan-300">{bp.cost?.wood || 0}</span>
+                </div>
+                <div className="text-xs text-slate-200">{bp.type}</div>
+                <div className="mt-1 text-[10px] text-slate-400">
                   {bp.cost.wood > 0 && `W:${bp.cost.wood} `}
                   {bp.cost.stone > 0 && `S:${bp.cost.stone} `}
                   {bp.cost.crystal > 0 && `C:${bp.cost.crystal}`}
-                </span>
+                </div>
               </button>
             );
           })}
         </div>
       )}
 
-      {/* Main Action Bar */}
-      <div
-        data-hud
-        className="flex items-center gap-2 px-3 py-2 bg-slate-950/90 border border-slate-800/90 rounded-2xl shadow-2xl"
-      >
-        <button
-          data-hud
-          id="btn-build-toggle"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={onToggleBuildMode}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center gap-2 transition-all ${
-            isBuildMode
-              ? 'bg-emerald-500 text-slate-950 shadow-[0_0_14px_rgba(16,185,129,0.5)] ring-2 ring-emerald-300'
-              : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <span>{isBuildMode ? 'Tap Ground to Build' : 'Build Mode (B)'}</span>
-        </button>
-
-        {isBuildMode && (
-          <div className="text-[11px] text-emerald-400 font-mono hidden sm:block px-2">
-            Tap terrain or click to place
+      <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/80 p-2.5 shadow-[0_18px_45px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/60 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300">Smart Menu</span>
           </div>
-        )}
+
+          <div className="flex items-center gap-1 rounded-xl bg-slate-800/80 p-1">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveTab('weapons')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+                activeTab === 'weapons'
+                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_16px_rgba(34,211,238,0.5)]'
+                  : 'text-slate-300 hover:bg-slate-700/80'
+              }`}
+            >
+              Weapons
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveTab('powers')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+                activeTab === 'powers'
+                  ? 'bg-violet-500 text-white shadow-[0_0_16px_rgba(168,85,247,0.45)]'
+                  : 'text-slate-300 hover:bg-slate-700/80'
+              }`}
+            >
+              Powers
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {activeItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (activeTab === 'weapons') {
+                  // Optional hook for weapon switching if the parent wires it later.
+                  return;
+                }
+              }}
+              className={`group relative flex min-w-[98px] items-center gap-3 rounded-2xl border border-slate-700 bg-gradient-to-r ${item.accent} px-3 py-2.5 text-left text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-cyan-500/20`}
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-slate-950/35 text-lg shadow-inner">
+                {item.icon}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/70">{activeTab === 'weapons' ? 'Weapon' : 'Power'}</div>
+                <div className="truncate text-sm font-semibold text-white">{item.label}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/60 px-2 py-2">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleBuildMode}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[10px] font-bold uppercase tracking-[0.18em] transition ${
+              isBuildMode
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.45)]'
+                : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            <span>{isBuildMode ? 'Build On' : 'Build Off'}</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            {visibleInventory.length > 0 ? (
+              visibleInventory.map((item, index) => (
+                <div
+                  key={`${String(item)}-${index}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-600 bg-slate-800/80 text-xs text-slate-200 shadow-inner"
+                >
+                  {index === 0 ? 'I' : index === 1 ? 'P' : index === 2 ? 'W' : 'S'}
+                </div>
+              ))
+            ) : (
+              <>
+                <div className="h-9 w-9 rounded-xl border border-slate-600 bg-slate-800/80" />
+                <div className="h-9 w-9 rounded-xl border border-slate-600 bg-slate-800/80" />
+                <div className="h-9 w-9 rounded-xl border border-slate-600 bg-slate-800/80" />
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 };
+
+export default Hotbar;
