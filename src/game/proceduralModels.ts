@@ -1,689 +1,348 @@
 import * as THREE from 'three';
 
-// Shared materials cache to minimize draw calls and shader recompiles
 const materials = {
-  bark: new THREE.MeshStandardMaterial({
-    color: 0x4a2e18,
-    roughness: 0.9,
-    metalness: 0.05,
-  }),
-  pineFoliage: new THREE.MeshStandardMaterial({
-    color: 0x1d4a2a,
-    roughness: 0.7,
-    metalness: 0.1,
-    flatShading: true,
-  }),
-  oakFoliage: new THREE.MeshStandardMaterial({
-    color: 0x2e6930,
-    roughness: 0.65,
-    metalness: 0.05,
-    flatShading: true,
-  }),
-  stone: new THREE.MeshStandardMaterial({
-    color: 0x6e7682,
-    roughness: 0.85,
-    metalness: 0.15,
-    flatShading: true,
-  }),
-  ironOre: new THREE.MeshStandardMaterial({
-    color: 0x8a5533,
-    roughness: 0.4,
-    metalness: 0.7,
-    flatShading: true,
-  }),
+  bark: new THREE.MeshStandardMaterial({ color: 0x4a2e1d, roughness: 0.9, metalness: 0.05, flatShading: true }),
+  pineFoliage: new THREE.MeshStandardMaterial({ color: 0x1d4a2a, roughness: 0.7, metalness: 0.08, flatShading: true }),
+  oakFoliage: new THREE.MeshStandardMaterial({ color: 0x2e692f, roughness: 0.72, metalness: 0.06, flatShading: true }),
+  stone: new THREE.MeshStandardMaterial({ color: 0x6e7682, roughness: 0.88, metalness: 0.12, flatShading: true }),
+  ironOre: new THREE.MeshStandardMaterial({ color: 0x8a5533, roughness: 0.45, metalness: 0.8, flatShading: true }),
   crystal: new THREE.MeshStandardMaterial({
     color: 0x00f0ff,
     emissive: 0x005577,
-    roughness: 0.15,
-    metalness: 0.6,
+    emissiveIntensity: 1.1,
+    roughness: 0.18,
+    metalness: 0.72,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.9,
+    flatShading: true,
   }),
-  timber: new THREE.MeshStandardMaterial({
-    color: 0x7c4f2b,
-    roughness: 0.75,
-    metalness: 0.05,
-  }),
-  timberDark: new THREE.MeshStandardMaterial({
-    color: 0x513117,
-    roughness: 0.8,
-    metalness: 0.05,
-  }),
-  metalPlate: new THREE.MeshStandardMaterial({
-    color: 0x3d444f,
-    roughness: 0.3,
-    metalness: 0.85,
-  }),
+  timber: new THREE.MeshStandardMaterial({ color: 0x7c4f2b, roughness: 0.75, metalness: 0.08, flatShading: true }),
+  timberDark: new THREE.MeshStandardMaterial({ color: 0x513b1a, roughness: 0.82, metalness: 0.05, flatShading: true }),
+  metalPlate: new THREE.MeshStandardMaterial({ color: 0x3d4444, roughness: 0.3, metalness: 0.85, flatShading: true }),
   ember: new THREE.MeshStandardMaterial({
-    color: 0xff4400,
+    color: 0xffa94d,
     emissive: 0xff5511,
-    emissiveIntensity: 1.8,
-    roughness: 0.4,
+    emissiveIntensity: 2.0,
+    roughness: 0.35,
+    metalness: 0.15,
   }),
-  playerSuit: new THREE.MeshStandardMaterial({
-    color: 0x2563eb, // Vibrant explorer blue
-    roughness: 0.5,
-    metalness: 0.2,
-  }),
-  playerTrim: new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    roughness: 0.4,
-    metalness: 0.6,
-  }),
-  playerVisor: new THREE.MeshStandardMaterial({
-    color: 0xf59e0b, // Gold tinted visor
-    roughness: 0.1,
-    metalness: 0.95,
-  }),
-  playerBackpack: new THREE.MeshStandardMaterial({
-    color: 0xd97706,
-    roughness: 0.6,
-    metalness: 0.3,
-  }),
+  playerSuit: new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.55, metalness: 0.2, flatShading: true }),
+  playerTrim: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.42, metalness: 0.65, flatShading: true }),
+  playerVisor: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.18, metalness: 0.95, flatShading: true }),
+  playerBackpack: new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.65, metalness: 0.25, flatShading: true }),
 };
 
-/**
- * 3-8 Part Procedural Tree (Grounded at y=0)
- */
+export type PlayerMeshGroup = THREE.Group & {
+  userData: {
+    leftLeg: THREE.Object3D;
+    rightLeg: THREE.Object3D;
+    leftArm: THREE.Object3D;
+    rightArm: THREE.Object3D;
+    cape: THREE.Object3D;
+    updateCloth?: (dt: number, isMoving: boolean, walkTime: number) => void;
+  };
+};
+
+function fract(value: number): number {
+  return value - Math.floor(value);
+}
+
+function hash2D(x: number, z: number): number {
+  return fract(Math.sin(x * 127.1 + z * 311.7) * 43758.5453123);
+}
+
+function smoothstep(min: number, max: number, value: number): number {
+  const t = Math.min(Math.max((value - min) / (max - min), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+function fbm2D(x: number, z: number): number {
+  let total = 0;
+  let amplitude = 0.5;
+  let frequency = 1;
+  let normalization = 0;
+
+  for (let i = 0; i < 5; i++) {
+    const sampleX = x * frequency;
+    const sampleZ = z * frequency;
+    const noise = hash2D(Math.floor(sampleX), Math.floor(sampleZ));
+    total += noise * amplitude;
+    normalization += amplitude;
+    amplitude *= 0.5;
+    frequency *= 2;
+  }
+
+  return total / normalization;
+}
+
 export function createTreeMesh(variant: 'pine' | 'oak' = 'pine'): THREE.Group {
   const group = new THREE.Group();
-  group.name = 'tree';
+  group.name = `tree_${variant}`;
 
-  // 1. Trunk
-  const trunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 2.2, 7);
+  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.26, 2.2, 8);
   const trunk = new THREE.Mesh(trunkGeo, materials.bark);
   trunk.position.y = 1.1;
   trunk.castShadow = true;
   trunk.receiveShadow = true;
   group.add(trunk);
 
-  // 2. Root spurs
-  for (let i = 0; i < 3; i++) {
-    const angle = (i * Math.PI * 2) / 3;
-    const rootGeo = new THREE.ConeGeometry(0.18, 0.6, 5);
-    const root = new THREE.Mesh(rootGeo, materials.bark);
-    root.rotation.z = 0.5;
-    root.rotation.y = angle;
-    root.position.set(Math.cos(angle) * 0.28, 0.2, Math.sin(angle) * 0.28);
-    root.castShadow = true;
-    group.add(root);
-  }
-
   if (variant === 'pine') {
-    // 3 Foliage Tiers (Cones)
     const tiers = [
-      { r: 1.6, h: 1.8, y: 2.2 },
-      { r: 1.25, h: 1.6, y: 3.2 },
-      { r: 0.85, h: 1.4, y: 4.1 },
+      { r: 1.2, h: 2.1 },
+      { r: 0.9, h: 2.7 },
+      { r: 0.6, h: 3.2 },
     ];
-    tiers.forEach((t) => {
-      const folGeo = new THREE.ConeGeometry(t.r, t.h, 7);
-      const fol = new THREE.Mesh(folGeo, materials.pineFoliage);
-      fol.position.y = t.y;
-      fol.castShadow = true;
-      fol.receiveShadow = true;
-      group.add(fol);
-    });
+
+    for (const tier of tiers) {
+      const cone = new THREE.ConeGeometry(tier.r, tier.h, 8);
+      const foliage = new THREE.Mesh(cone, materials.pineFoliage);
+      foliage.position.y = 3.0 + tier.h * 0.45;
+      foliage.castShadow = true;
+      foliage.receiveShadow = true;
+      group.add(foliage);
+    }
   } else {
-    // Oak: 4 clustered faceted leaf blobs
-    const clusters = [
-      { r: 1.2, x: 0, y: 2.6, z: 0 },
-      { r: 0.9, x: 0.45, y: 2.9, z: 0.3 },
-      { r: 0.85, x: -0.4, y: 2.8, z: -0.25 },
-      { r: 0.7, x: 0.1, y: 3.4, z: -0.1 },
+    const clumps = [
+      { x: 0, y: 2.8, z: 0 },
+      { x: 0.7, y: 2.9, z: 0.4 },
+      { x: -0.7, y: 3.0, z: -0.4 },
+      { x: 0.4, y: 3.2, z: -0.6 },
+      { x: -0.5, y: 3.1, z: 0.8 },
     ];
-    clusters.forEach((c) => {
-      const geo = new THREE.DodecahedronGeometry(c.r, 1);
-      const m = new THREE.Mesh(geo, materials.oakFoliage);
-      m.position.set(c.x, c.y, c.z);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      group.add(m);
-    });
+
+    for (const clump of clumps) {
+      const leafBall = new THREE.SphereGeometry(0.8, 10, 10);
+      const foliage = new THREE.Mesh(leafBall, materials.oakFoliage);
+      foliage.position.set(clump.x, clump.y, clump.z);
+      foliage.scale.set(1.1, 0.9, 1.1);
+      foliage.castShadow = true;
+      foliage.receiveShadow = true;
+      group.add(foliage);
+    }
   }
 
   return group;
 }
 
-/**
- * 3-5 Part Procedural Rock / Crystal Node (Grounded at y=0)
- */
 export function createResourceNodeMesh(type: 'stone' | 'crystal'): THREE.Group {
   const group = new THREE.Group();
   group.name = type;
 
   if (type === 'stone') {
-    // Main boulder
-    const mainGeo = new THREE.DodecahedronGeometry(1.0, 1);
-    const mainMesh = new THREE.Mesh(mainGeo, materials.stone);
-    mainMesh.position.y = 0.8;
-    mainMesh.scale.set(1.2, 0.9, 1.1);
-    mainMesh.castShadow = true;
-    mainMesh.receiveShadow = true;
-    group.add(mainMesh);
+    const body = new THREE.DodecahedronGeometry(0.9, 0);
+    const mesh = new THREE.Mesh(body, materials.stone);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2);
+    group.add(mesh);
 
-    // Satellite rocks & iron veins
-    const sub1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5, 0), materials.stone);
-    sub1.position.set(0.7, 0.35, 0.5);
-    sub1.castShadow = true;
-    group.add(sub1);
-
-    const oreVein = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 0), materials.ironOre);
-    oreVein.position.set(-0.55, 0.6, 0.45);
-    oreVein.castShadow = true;
-    group.add(oreVein);
+    const veinGeo = new THREE.CylinderGeometry(0.08, 0.12, 1.3, 6);
+    const vein = new THREE.Mesh(veinGeo, materials.ironOre);
+    vein.position.set(-0.5, 0.1, 0.2);
+    vein.rotation.z = 1.1;
+    vein.castShadow = true;
+    group.add(vein);
   } else {
-    // Crystal Spire
-    const coreGeo = new THREE.ConeGeometry(0.5, 2.2, 6);
-    const core = new THREE.Mesh(coreGeo, materials.crystal);
-    core.position.y = 1.1;
-    core.castShadow = true;
-    group.add(core);
+    const core = new THREE.ConeGeometry(0.45, 1.8, 8);
+    const crystal = new THREE.Mesh(core, materials.crystal);
+    crystal.position.y = 0.9;
+    crystal.rotation.set(0.6, 0.3, 1.1);
+    crystal.castShadow = true;
+    crystal.receiveShadow = true;
+    group.add(crystal);
 
-    // Satellite shards
-    const shardAngles = [0.8, 2.6, 4.4];
-    shardAngles.forEach((ang, i) => {
-      const shardGeo = new THREE.ConeGeometry(0.25, 1.2, 5);
+    const shardGeo = new THREE.ConeGeometry(0.2, 1.1, 5);
+    for (let i = 0; i < 4; i++) {
       const shard = new THREE.Mesh(shardGeo, materials.crystal);
-      shard.position.set(Math.cos(ang) * 0.45, 0.5, Math.sin(ang) * 0.45);
-      shard.rotation.z = 0.35;
-      shard.rotation.y = ang + i * 0.2;
+      shard.position.set(Math.cos(i * 1.57) * 0.4, 0.6 + (i % 2) * 0.2, Math.sin(i * 1.57) * 0.4);
+      shard.rotation.set(Math.PI / 2, i * 0.8, i * 0.5);
       shard.castShadow = true;
       group.add(shard);
-    });
-
-    // Rock base collar
-    const baseGeo = new THREE.DodecahedronGeometry(0.65, 0);
-    const base = new THREE.Mesh(baseGeo, materials.stone);
-    base.position.y = 0.25;
-    base.scale.set(1.2, 0.45, 1.2);
-    base.castShadow = true;
-    group.add(base);
+    }
   }
 
   return group;
 }
 
-/**
- * Procedural Player Character (Composite Group with limbs, cape cloth physics, and gear)
- */
-export interface PlayerMeshGroup extends THREE.Group {
-  userData: {
-    leftLeg?: THREE.Mesh;
-    rightLeg?: THREE.Mesh;
-    leftArm?: THREE.Mesh;
-    rightArm?: THREE.Mesh;
-    tool?: THREE.Group;
-    bodyGroup?: THREE.Group;
-    cape?: THREE.Mesh;
-    updateCloth?: (dt: number, isMoving: boolean, walkTime: number) => void;
-  };
-}
-
-// Procedural Cloth Texture for Survival Explorer Cape
-const explorerCapeTexture = (() => {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 256;
-  const ctx = c.getContext('2d');
-  if (!ctx) return null;
-
-  // Navy / Amber field
-  const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#1e293b');
-  grad.addColorStop(0.7, '#0f172a');
-  grad.addColorStop(1, '#020617');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 256, 256);
-
-  // Microscopic weave
-  for (let y = 0; y < 256; y += 4) {
-    ctx.strokeStyle = y % 8 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.15)';
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke();
-  }
-  for (let x = 0; x < 256; x += 4) {
-    ctx.strokeStyle = x % 8 === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.15)';
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke();
-  }
-
-  // Golden Expedition Star Emblem
-  ctx.save();
-  ctx.translate(128, 90);
-  ctx.fillStyle = '#f59e0b';
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4;
-    const r = i % 2 === 0 ? 24 : 10;
-    const px = Math.cos(a) * r;
-    const py = Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // Gold Trim Bottom Hem
-  ctx.fillStyle = '#fbbf24';
-  ctx.fillRect(0, 238, 256, 8);
-  ctx.fillStyle = '#f59e0b';
-  ctx.fillRect(0, 246, 256, 10);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
-})();
-
-const capeMaterial = new THREE.MeshStandardMaterial({
-  map: explorerCapeTexture,
-  color: 0xffffff,
-  roughness: 0.82,
-  metalness: 0.1,
-  side: THREE.DoubleSide,
-  shadowSide: THREE.DoubleSide,
-});
-
-export function createPlayerMesh(): PlayerMeshGroup {
-  const root = new THREE.Group() as PlayerMeshGroup;
-  root.name = 'player';
-
-  const bodyGroup = new THREE.Group();
-  bodyGroup.position.y = 0.9;
-  root.add(bodyGroup);
-
-  // 1. Torso
-  const torsoGeo = new THREE.CylinderGeometry(0.28, 0.24, 0.65, 8);
-  const torso = new THREE.Mesh(torsoGeo, materials.playerSuit);
-  torso.castShadow = true;
-  bodyGroup.add(torso);
-
-  // Chest Emblem
-  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.04), materials.playerTrim);
-  chestPlate.position.set(0, 0.08, 0.22);
-  const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.05, 6), materials.crystal);
-  chestCore.rotation.x = Math.PI / 2;
-  chestCore.position.set(0, 0.08, 0.24);
-  bodyGroup.add(chestPlate, chestCore);
-
-  // 2. Utility belt & Pouch
-  const beltGeo = new THREE.CylinderGeometry(0.29, 0.29, 0.1, 8);
-  const belt = new THREE.Mesh(beltGeo, materials.playerTrim);
-  belt.position.y = -0.22;
-  const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.07), materials.playerBackpack);
-  pouch.position.set(0.20, -0.22, 0.14);
-  bodyGroup.add(belt, pouch);
-
-  // 3. Head & Helmet
-  const headGeo = new THREE.SphereGeometry(0.24, 12, 10);
-  const head = new THREE.Mesh(headGeo, materials.playerSuit);
-  head.position.y = 0.52;
-  head.castShadow = true;
-  bodyGroup.add(head);
-
-  // 4. Gold Visor
-  const visorGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.14, 8, 1, false, -Math.PI / 2.5, Math.PI / 1.25);
-  const visor = new THREE.Mesh(visorGeo, materials.playerVisor);
-  visor.position.set(0, 0.52, 0.12);
-  visor.rotation.y = Math.PI / 2;
-  bodyGroup.add(visor);
-
-  // 5. Backpack
-  const packGeo = new THREE.BoxGeometry(0.32, 0.42, 0.2);
-  const pack = new THREE.Mesh(packGeo, materials.playerBackpack);
-  pack.position.set(0, 0.05, -0.22);
-  pack.castShadow = true;
-  bodyGroup.add(pack);
-
-  // 6. Antenna / Beacon
-  const antGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.25, 4);
-  const ant = new THREE.Mesh(antGeo, materials.playerTrim);
-  ant.position.set(0.1, 0.32, -0.22);
-  bodyGroup.add(ant);
-
-  // 7. Nuanced Cloth Cape Simulation Setup (6 cols x 9 rows)
-  const cCols = 6;
-  const cRows = 9;
-  const cWidth = 0.52;
-  const cHeight = 0.95;
-  const cGeo = new THREE.PlaneGeometry(cWidth, cHeight, cCols - 1, cRows - 1);
-  const cPosAttr = cGeo.attributes.position;
-  const cParticles: { pos: THREE.Vector3; oldPos: THREE.Vector3; orig: THREE.Vector3; pinned: boolean }[] = [];
-
-  for (let r = 0; r < cRows; r++) {
-    for (let c = 0; c < cCols; c++) {
-      const idx = r * cCols + c;
-      const nx = c / (cCols - 1) - 0.5;
-      const ny = r / (cRows - 1);
-      const x = nx * cWidth;
-      const y = 0.26 - ny * cHeight;
-      const z = -0.32 - ny * 0.03;
-      cPosAttr.setXYZ(idx, x, y, z);
-      cParticles.push({
-        pos: new THREE.Vector3(x, y, z),
-        oldPos: new THREE.Vector3(x, y, z),
-        orig: new THREE.Vector3(x, y, z),
-        pinned: (r === 0)
-      });
-    }
-  }
-  cPosAttr.needsUpdate = true;
-  cGeo.computeVertexNormals();
-
-  const capeMesh = new THREE.Mesh(cGeo, capeMaterial);
-  capeMesh.castShadow = true;
-  bodyGroup.add(capeMesh);
-
-  // Cape Constraints
-  const sX = cWidth / (cCols - 1);
-  const sY = cHeight / (cRows - 1);
-  const cConstraints: [number, number, number][] = [];
-  for (let r = 0; r < cRows; r++) {
-    for (let c = 0; c < cCols - 1; c++) {
-      cConstraints.push([r * cCols + c, r * cCols + c + 1, sX]);
-    }
-  }
-  for (let r = 0; r < cRows - 1; r++) {
-    for (let c = 0; c < cCols; c++) {
-      cConstraints.push([r * cCols + c, (r + 1) * cCols + c, sY]);
-    }
-  }
-
-  const updateCloth = (dt: number, isMoving: boolean, walkTime: number) => {
-    const backwardForce = isMoving ? 0.35 : 0.04;
-    const flutter = isMoving ? 0.04 : 0.015;
-    const drag = 0.90;
-    const gravY = -9.8 * 0.32 * dt * dt;
-
-    for (let i = 0; i < cParticles.length; i++) {
-      const p = cParticles[i];
-      if (p.pinned) {
-        p.pos.copy(p.orig);
-        p.oldPos.copy(p.orig);
-        continue;
-      }
-      const r = Math.floor(i / cCols);
-      const normR = r / (cRows - 1);
-
-      const vx = (p.pos.x - p.oldPos.x) * drag;
-      const vy = (p.pos.y - p.oldPos.y) * drag;
-      const vz = (p.pos.z - p.oldPos.z) * drag;
-
-      p.oldPos.copy(p.pos);
-
-      const wave = Math.sin(walkTime * 8 + r * 1.2) * flutter * normR;
-      p.pos.x += vx;
-      p.pos.y += vy + gravY;
-      p.pos.z += vz - backwardForce * normR * dt * 7 + wave;
-
-      // Body obstacle push-out
-      const bodyRadius = 0.28;
-      const dist2D = Math.hypot(p.pos.x, p.pos.z);
-      if (dist2D < bodyRadius && p.pos.z > -bodyRadius) {
-        const safeZ = -Math.sqrt(Math.max(0.001, bodyRadius * bodyRadius - p.pos.x * p.pos.x)) - 0.02;
-        p.pos.z = Math.min(p.pos.z, safeZ);
-      }
-    }
-
-    // Solve relaxation
-    for (let iter = 0; iter < 2; iter++) {
-      for (let ci = 0; ci < cConstraints.length; ci++) {
-        const [i1, i2, rest] = cConstraints[ci];
-        const p1 = cParticles[i1];
-        const p2 = cParticles[i2];
-        const dx = p2.pos.x - p1.pos.x;
-        const dy = p2.pos.y - p1.pos.y;
-        const dz = p2.pos.z - p1.pos.z;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist === 0) continue;
-        const diff = (dist - rest) / dist;
-        const ox = dx * 0.5 * diff;
-        const oy = dy * 0.5 * diff;
-        const oz = dz * 0.5 * diff;
-        if (!p1.pinned && !p2.pinned) {
-          p1.pos.x += ox; p1.pos.y += oy; p1.pos.z += oz;
-          p2.pos.x -= ox; p2.pos.y -= oy; p2.pos.z -= oz;
-        } else if (!p1.pinned && p2.pinned) {
-          p1.pos.x += ox * 2; p1.pos.y += oy * 2; p1.pos.z += oz * 2;
-        } else if (p1.pinned && !p2.pinned) {
-          p2.pos.x -= ox * 2; p2.pos.y -= oy * 2; p2.pos.z -= oz * 2;
-        }
-      }
-    }
-
-    for (let i = 0; i < cParticles.length; i++) {
-      cPosAttr.setXYZ(i, cParticles[i].pos.x, cParticles[i].pos.y, cParticles[i].pos.z);
-    }
-    cPosAttr.needsUpdate = true;
-    cGeo.computeVertexNormals();
-    cGeo.attributes.normal.needsUpdate = true;
-  };
-
-  // 8. Legs with Articulated Knee Guards
-  const legGeo = new THREE.CylinderGeometry(0.09, 0.08, 0.55, 6);
-  legGeo.translate(0, -0.275, 0);
-
-  const leftLeg = new THREE.Mesh(legGeo, materials.playerTrim);
-  leftLeg.position.set(-0.14, 0.55, 0);
-  leftLeg.castShadow = true;
-  const leftKnee = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.06), materials.playerSuit);
-  leftKnee.position.set(0, -0.28, 0.08);
-  leftLeg.add(leftKnee);
-  root.add(leftLeg);
-
-  const rightLeg = new THREE.Mesh(legGeo, materials.playerTrim);
-  rightLeg.position.set(0.14, 0.55, 0);
-  rightLeg.castShadow = true;
-  const rightKnee = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.06), materials.playerSuit);
-  rightKnee.position.set(0, -0.28, 0.08);
-  rightLeg.add(rightKnee);
-  root.add(rightLeg);
-
-  // 9. Arms with Pauldrons
-  const armGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.5, 6);
-  armGeo.translate(0, -0.25, 0);
-
-  const leftArm = new THREE.Mesh(armGeo, materials.playerSuit);
-  leftArm.position.set(-0.35, 0.85, 0);
-  leftArm.castShadow = true;
-  const leftPauldron = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 6), materials.playerTrim);
-  leftPauldron.position.set(-0.02, 0.02, 0);
-  leftArm.add(leftPauldron);
-  root.add(leftArm);
-
-  const rightArm = new THREE.Mesh(armGeo, materials.playerSuit);
-  rightArm.position.set(0.35, 0.85, 0);
-  rightArm.castShadow = true;
-  const rightPauldron = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 6), materials.playerTrim);
-  rightPauldron.position.set(0.02, 0.02, 0);
-  rightArm.add(rightPauldron);
-  root.add(rightArm);
-
-  // 10. Tool (Axe / Hammer) in right hand
-  const toolGroup = new THREE.Group();
-  const handleGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 5);
-  const handle = new THREE.Mesh(handleGeo, materials.timberDark);
-  handle.rotation.x = Math.PI / 2;
-  toolGroup.add(handle);
-
-  const headPickGeo = new THREE.BoxGeometry(0.08, 0.24, 0.12);
-  const headPick = new THREE.Mesh(headPickGeo, materials.metalPlate);
-  headPick.position.set(0, 0, 0.22);
-  toolGroup.add(headPick);
-
-  toolGroup.position.set(0, -0.45, 0.15);
-  rightArm.add(toolGroup);
-
-  root.userData = {
-    leftLeg,
-    rightLeg,
-    leftArm,
-    rightArm,
-    tool: toolGroup,
-    bodyGroup,
-    cape: capeMesh,
-    updateCloth
-  };
-  return root;
-}
-
-/**
- * 3-10 Part Procedural Buildable Structures
- */
 export function createStructureModel(type: string): THREE.Group {
   const group = new THREE.Group();
   group.name = `structure_${type}`;
 
-  if (type === 'campfire') {
-    // 6 stones in a ring
-    for (let i = 0; i < 6; i++) {
-      const ang = (i * Math.PI * 2) / 6;
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), materials.stone);
-      rock.position.set(Math.cos(ang) * 0.65, 0.14, Math.sin(ang) * 0.65);
-      rock.castShadow = true;
-      group.add(rock);
+  switch (type) {
+    case 'campfire': {
+      const base = new THREE.CylinderGeometry(0.9, 1.1, 0.5, 12);
+      const stoneBase = new THREE.Mesh(base, materials.stone);
+      stoneBase.position.y = 0.25;
+      group.add(stoneBase);
+
+      for (let i = 0; i < 6; i++) {
+        const rock = new THREE.DodecahedronGeometry(0.18, 0);
+        const mesh = new THREE.Mesh(rock, materials.stone);
+        const angle = (i / 6) * Math.PI * 2;
+        mesh.position.set(Math.cos(angle) * 0.7, 0.2, Math.sin(angle) * 0.7);
+        mesh.scale.set(1, 0.4, 1);
+        group.add(mesh);
+      }
+
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 12), materials.ember);
+      flame.position.y = 0.8;
+      flame.scale.set(1, 1.5, 1);
+      group.add(flame);
+      break;
     }
-    // 3 crossed logs
-    for (let i = 0; i < 3; i++) {
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.9, 6), materials.timber);
-      log.rotation.z = Math.PI / 2;
-      log.rotation.y = (i * Math.PI) / 3;
-      log.position.y = 0.18;
-      log.castShadow = true;
-      group.add(log);
+    case 'shelter': {
+      const frameGeo = new THREE.BoxGeometry(0.12, 1.8, 0.12);
+      for (const x of [-1.8, 1.8]) {
+        for (const z of [-1.2, 1.2]) {
+          const beam = new THREE.Mesh(frameGeo, materials.timberDark);
+          beam.position.set(x, 0.9, z);
+          group.add(beam);
+        }
+      }
+
+      for (let i = 0; i < 5; i++) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.12, 0.12), materials.timber);
+        beam.position.set(0, 1.7 - i * 0.25, i * 0.4 - 1.2);
+        beam.rotation.z = i % 2 === 0 ? 0.2 : -0.2;
+        group.add(beam);
+      }
+
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.3, 4), materials.pineFoliage);
+      roof.rotateY(Math.PI / 4);
+      roof.position.y = 2.2;
+      group.add(roof);
+      break;
     }
-    // Glowing ember center
-    const ember = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24, 0), materials.ember);
-    ember.position.y = 0.2;
-    group.add(ember);
+    case 'tower': {
+      const base = new THREE.CylinderGeometry(0.8, 1.1, 0.5, 8);
+      const body = new THREE.CylinderGeometry(0.7, 0.9, 2.4, 8);
+      const baseMesh = new THREE.Mesh(base, materials.timber);
+      const bodyMesh = new THREE.Mesh(body, materials.timberDark);
+      baseMesh.position.y = 0.25;
+      bodyMesh.position.y = 1.6;
+      group.add(baseMesh, bodyMesh);
 
-    // Warm point light for campfire
-    const fireLight = new THREE.PointLight(0xff7722, 2.5, 6, 1.5);
-    fireLight.position.set(0, 0.6, 0);
-    fireLight.name = 'fireLight';
-    group.add(fireLight);
-  } else if (type === 'shelter') {
-    // 4 Corner stilts
-    const postGeo = new THREE.CylinderGeometry(0.09, 0.09, 2.0, 6);
-    const coords = [
-      [-1.0, -1.0],
-      [1.0, -1.0],
-      [-1.0, 1.0],
-      [1.0, 1.0],
-    ];
-    coords.forEach(([x, z]) => {
-      const post = new THREE.Mesh(postGeo, materials.timber);
-      post.position.set(x, 1.0, z);
-      post.castShadow = true;
-      group.add(post);
-    });
-
-    // Crossbeams
-    const beamGeo = new THREE.BoxGeometry(2.1, 0.12, 0.12);
-    const b1 = new THREE.Mesh(beamGeo, materials.timber);
-    b1.position.set(0, 1.95, -1.0);
-    const b2 = new THREE.Mesh(beamGeo, materials.timber);
-    b2.position.set(0, 1.95, 1.0);
-    group.add(b1, b2);
-
-    // Slanted plank roof
-    const roofGeo = new THREE.BoxGeometry(2.4, 0.08, 2.4);
-    const roof = new THREE.Mesh(roofGeo, materials.timberDark);
-    roof.position.set(0, 2.15, 0);
-    roof.rotation.x = 0.12;
-    roof.castShadow = true;
-    roof.receiveShadow = true;
-    group.add(roof);
-
-    // Back wall slats
-    for (let i = 0; i < 4; i++) {
-      const slat = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.35, 0.06), materials.timber);
-      slat.position.set(0, 0.3 + i * 0.42, -0.98);
-      slat.castShadow = true;
-      group.add(slat);
+      const roof = new THREE.ConeGeometry(0.8, 1.1, 6);
+      const roofMesh = new THREE.Mesh(roof, materials.metalPlate);
+      roofMesh.position.y = 3.2;
+      group.add(roofMesh);
+      break;
     }
-  } else if (type === 'tower') {
-    // 4 Tall posts
-    const stiltGeo = new THREE.CylinderGeometry(0.1, 0.12, 4.0, 6);
-    [
-      [-0.8, -0.8],
-      [0.8, -0.8],
-      [-0.8, 0.8],
-      [0.8, 0.8],
-    ].forEach(([x, z]) => {
-      const stilt = new THREE.Mesh(stiltGeo, materials.timber);
-      stilt.position.set(x, 2.0, z);
-      stilt.castShadow = true;
-      group.add(stilt);
-    });
+    case 'beacon': {
+      const pole = new THREE.CylinderGeometry(0.12, 0.18, 3.2, 8);
+      const poleMesh = new THREE.Mesh(pole, materials.metalPlate);
+      poleMesh.position.y = 1.6;
+      group.add(poleMesh);
 
-    // Platform floor
-    const platGeo = new THREE.BoxGeometry(2.2, 0.14, 2.2);
-    const plat = new THREE.Mesh(platGeo, materials.timberDark);
-    plat.position.set(0, 3.9, 0);
-    plat.castShadow = true;
-    group.add(plat);
-
-    // Safety railings
-    const railGeo = new THREE.BoxGeometry(2.2, 0.08, 0.08);
-    const r1 = new THREE.Mesh(railGeo, materials.timber);
-    r1.position.set(0, 4.5, -1.0);
-    const r2 = new THREE.Mesh(railGeo, materials.timber);
-    r2.position.set(0, 4.5, 1.0);
-    group.add(r1, r2);
-
-    // Ladder rungs on back
-    for (let i = 1; i <= 7; i++) {
-      const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 4), materials.timber);
-      rung.rotation.z = Math.PI / 2;
-      rung.position.set(0, i * 0.5, -0.8);
-      group.add(rung);
+      const orb = new THREE.SphereGeometry(0.5, 14, 14);
+      const orbMesh = new THREE.Mesh(orb, materials.crystal);
+      orbMesh.position.y = 3.3;
+      group.add(orbMesh);
+      break;
     }
-  } else if (type === 'beacon') {
-    // Metal pedestal base
-    const baseGeo = new THREE.CylinderGeometry(0.7, 0.9, 0.3, 8);
-    const base = new THREE.Mesh(baseGeo, materials.metalPlate);
-    base.position.y = 0.15;
-    base.castShadow = true;
-    group.add(base);
-
-    // Pillar
-    const pillarGeo = new THREE.CylinderGeometry(0.22, 0.35, 1.5, 8);
-    const pillar = new THREE.Mesh(pillarGeo, materials.metalPlate);
-    pillar.position.y = 0.9;
-    pillar.castShadow = true;
-    group.add(pillar);
-
-    // Gyro ring
-    const ringGeo = new THREE.TorusGeometry(0.5, 0.06, 8, 20);
-    const ring = new THREE.Mesh(ringGeo, materials.metalPlate);
-    ring.position.y = 1.7;
-    ring.rotation.x = Math.PI / 4;
-    ring.name = 'gyroRing';
-    group.add(ring);
-
-    // Glowing core
-    const coreGeo = new THREE.SphereGeometry(0.28, 12, 10);
-    const core = new THREE.Mesh(coreGeo, materials.crystal);
-    core.position.y = 1.7;
-    group.add(core);
-
-    const beaconLight = new THREE.PointLight(0x00f0ff, 2.0, 8, 1.5);
-    beaconLight.position.set(0, 2.0, 0);
-    group.add(beaconLight);
-  } else if (type === 'wall') {
-    // 3 Defensive palisade stakes
-    for (let i = -1; i <= 1; i++) {
-      const stakeGeo = new THREE.ConeGeometry(0.2, 2.2, 6);
-      const stake = new THREE.Mesh(stakeGeo, materials.timber);
-      stake.position.set(i * 0.45, 1.1, 0);
-      stake.castShadow = true;
-      group.add(stake);
+    case 'wall': {
+      const segment = new THREE.BoxGeometry(1.8, 1.0, 0.35);
+      for (let i = 0; i < 3; i++) {
+        const stone = new THREE.Mesh(segment, materials.timberDark);
+        stone.position.set(i * 1.1 - 1.1, 0.5, 0);
+        stone.castShadow = true;
+        stone.receiveShadow = true;
+        group.add(stone);
+      }
+      break;
     }
-    // Horizontal cross bracing
-    const brace = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.1), materials.timberDark);
-    brace.position.set(0, 0.9, 0.12);
-    group.add(brace);
+    default: {
+      const fallback = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+      const mesh = new THREE.Mesh(fallback, materials.timber);
+      group.add(mesh);
+    }
   }
+
+  return group;
+}
+
+export function createPlayerMesh(): PlayerMeshGroup {
+  const group = new THREE.Group() as PlayerMeshGroup;
+  group.name = 'player';
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.2, 6, 12), materials.playerSuit);
+  torso.position.y = 1.65;
+  torso.castShadow = true;
+  torso.receiveShadow = true;
+  group.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 20), materials.playerSuit);
+  head.position.y = 2.85;
+  head.castShadow = true;
+  group.add(head);
+
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.18), materials.playerVisor);
+  visor.position.set(0, 2.9, 0.22);
+  visor.castShadow = true;
+  group.add(visor);
+
+  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.7, 0.24), materials.playerBackpack);
+  backpack.position.set(0, 1.9, -0.4);
+  backpack.castShadow = true;
+  group.add(backpack);
+
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.58, 2.2, 0);
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.9, 4, 10), materials.playerSuit);
+  leftArm.position.y = -0.5;
+  leftArm.castShadow = true;
+  leftArmPivot.add(leftArm);
+  group.add(leftArmPivot);
+
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.58, 2.2, 0);
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.9, 4, 10), materials.playerSuit);
+  rightArm.position.y = -0.5;
+  rightArm.castShadow = true;
+  rightArmPivot.add(rightArm);
+  group.add(rightArmPivot);
+
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.22, 0.8, 0);
+  const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.9, 4, 10), materials.playerTrim);
+  leftLeg.position.y = -0.4;
+  leftLeg.castShadow = true;
+  leftLegPivot.add(leftLeg);
+  group.add(leftLegPivot);
+
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.22, 0.8, 0);
+  const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.9, 4, 10), materials.playerTrim);
+  rightLeg.position.y = -0.4;
+  rightLeg.castShadow = true;
+  rightLegPivot.add(rightLeg);
+  group.add(rightLegPivot);
+
+  const capeGeo = new THREE.BoxGeometry(0.8, 1.4, 0.08);
+  const cape = new THREE.Mesh(capeGeo, new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7, metalness: 0.1, flatShading: true }));
+  cape.position.set(0, 1.7, 0.52);
+  cape.castShadow = true;
+  group.add(cape);
+
+  const capeOffset = new THREE.Vector3();
+  const updateCloth = (dt: number, isMoving: boolean, walkTime: number) => {
+    const sway = isMoving ? Math.sin(walkTime * 2.5) * 0.18 : Math.sin(walkTime * 1.5) * 0.08;
+    cape.rotation.x = 0.3 + sway;
+    cape.rotation.z = 0.12 + Math.sin(walkTime * 2) * 0.08;
+    cape.position.x = capeOffset.x + Math.sin(walkTime * 1.6) * 0.04;
+    cape.position.y = 1.7 + Math.sin(walkTime * 2.4) * 0.05;
+    cape.position.z = 0.52 + Math.cos(walkTime * 1.8) * 0.06;
+    cape.rotation.y += dt * 0.4;
+  };
+
+  group.userData = {
+    leftLeg: leftLegPivot,
+    rightLeg: rightLegPivot,
+    leftArm: leftArmPivot,
+    rightArm: rightArmPivot,
+    cape,
+    updateCloth,
+  };
 
   return group;
 }
