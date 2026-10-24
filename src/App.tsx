@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { GameEngine } from './game/GameEngine';
 import { sound } from './game/audio';
-import { FloatingText } from './game/world';
-import { InventorySlot } from './game/Inventory';
+import { GameStore, INITIAL_GAME_STATE } from './game/GameStore';
+import { GameSnapshot } from './game/GameState';
 import { VirtualJoystick } from './components/VirtualJoystick';
 import { Minimap } from './components/Minimap';
 import { Hotbar } from './components/Hotbar';
@@ -15,114 +15,89 @@ export default function App() {
   const canvasMountRef = useRef<HTMLDivElement>(null);
   const lookZoneRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  const storeRef = useRef<GameStore>(new GameStore(INITIAL_GAME_STATE));
+  const [gameState, setGameState] = useState<GameSnapshot>(storeRef.current.getState());
 
-  // App shell states
-  const [gameStage, setGameStage] = useState<'title' | 'playing'>('title');
-  const [horizon3Mode, setHorizon3Mode] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isInventoryOpen, setIsInventoryOpen] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-
-  // Synced game state
-  const [inventory, setInventory] = useState({ wood: 12, stone: 8, crystal: 4 });
-  const [inventorySlots, setInventorySlots] = useState<InventorySlot[]>([]);
-  const [inventoryUsed, setInventoryUsed] = useState(5);
-  const [inventoryMax, setInventoryMax] = useState(16);
-  const [equippedAxe, setEquippedAxe] = useState('standard_axe');
-  const [equippedPickaxe, setEquippedPickaxe] = useState('standard_pickaxe');
-
-  const [isBuildMode, setIsBuildMode] = useState(false);
-  const [selectedBlueprint, setSelectedBlueprint] = useState('campfire');
-  const [activeTool, setActiveTool] = useState<'axe' | 'pickaxe'>('axe');
-  const [playerCoord, setPlayerCoord] = useState({ x: 0, z: 0, angle: 0 });
-
-  // Floating text alerts
-  const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
-
-  // Initialize GameEngine once
   useEffect(() => {
-    if (!canvasMountRef.current || !lookZoneRef.current) return;
+    const unsubscribe = storeRef.current.subscribe((next) => {
+      setGameState(next);
+    });
+
+    if (!canvasMountRef.current || !lookZoneRef.current) return unsubscribe;
 
     const engine = new GameEngine(canvasMountRef.current, lookZoneRef.current);
     engineRef.current = engine;
 
     engine.onStateChange = (state) => {
-      setInventory({ ...state.inventory });
-      setInventorySlots([...state.inventorySlots]);
-      setInventoryUsed(state.inventoryUsed);
-      setInventoryMax(state.inventoryMax);
-      setEquippedAxe(state.equippedAxe);
-      setEquippedPickaxe(state.equippedPickaxe);
-
-      setIsBuildMode(state.isBuildMode);
-      setSelectedBlueprint(state.selectedBlueprint);
-      setActiveTool(state.activeTool);
-      setPlayerCoord({
-        x: state.playerPos.x,
-        z: state.playerPos.z,
-        angle: state.facingAngle,
+      storeRef.current.setState({
+        inventory: { ...state.inventory },
+        inventorySlots: state.inventorySlots.map((slot) => ({
+          index: slot.index,
+          item: slot.item ? { ...slot.item } : null,
+        })),
+        inventoryUsed: state.inventoryUsed,
+        inventoryMax: state.inventoryMax,
+        equippedAxe: state.equippedAxe,
+        equippedPickaxe: state.equippedPickaxe,
+        isBuildMode: state.isBuildMode,
+        selectedBlueprint: state.selectedBlueprint,
+        activeTool: state.activeTool,
+        playerCoord: {
+          x: state.playerPos.x,
+          z: state.playerPos.z,
+          angle: state.facingAngle,
+        },
       });
     };
 
     engine.onFeedbackEvent = (text, color, screenX, screenY) => {
-      const id = Date.now() + Math.random();
-      setFloatingTexts((prev) => [
-        ...prev,
-        { id, text, color, x: screenX, y: screenY, opacity: 1, life: 1 },
-      ]);
+      const next = storeRef.current.getState();
+      storeRef.current.setState({
+        floatingTexts: [
+          ...next.floatingTexts,
+          { id: Date.now() + Math.random(), text, color, x: screenX, y: screenY, opacity: 1, life: 1 },
+        ],
+      });
     };
 
-    // Initial sync
     engine.syncInventoryState();
-    setInventorySlots([...engine.state.inventorySlots]);
-    setInventoryUsed(engine.state.inventoryUsed);
-    setInventoryMax(engine.state.inventoryMax);
 
     return () => {
+      unsubscribe();
       engine.destroy();
       engineRef.current = null;
     };
   }, []);
 
-  // Keyboard shortcut listener for Tab / I / P
+  useEffect(() => {
+    if (gameState.floatingTexts.length === 0) return;
+    const interval = window.setInterval(() => {
+      storeRef.current.decayFloatingTexts();
+    }, 30);
+    return () => window.clearInterval(interval);
+  }, [gameState.floatingTexts.length]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (gameStage !== 'playing') return;
+      if (gameState.gameStage !== 'playing') return;
       if (e.code === 'KeyI' || e.code === 'Tab') {
         e.preventDefault();
-        setIsInventoryOpen((prev) => !prev);
+        storeRef.current.setState({ isInventoryOpen: !gameState.isInventoryOpen });
       }
       if (e.code === 'KeyP') {
         e.preventDefault();
-        setIsPaused((prev) => !prev);
+        storeRef.current.setState({ isPaused: !gameState.isPaused });
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameStage]);
-
-  // Floating text animation decay loop
-  useEffect(() => {
-    if (floatingTexts.length === 0) return;
-    const interval = setInterval(() => {
-      setFloatingTexts((prev) =>
-        prev
-          .map((ft) => ({
-            ...ft,
-            y: ft.y - 1.5,
-            opacity: ft.opacity - 0.04,
-            life: ft.life - 0.04,
-          }))
-          .filter((ft) => ft.opacity > 0)
-      );
-    }, 30);
-    return () => clearInterval(interval);
-  }, [floatingTexts.length]);
+  }, [gameState.gameStage, gameState.isInventoryOpen, gameState.isPaused]);
 
   const handleStartGame = useCallback(() => {
     sound.init();
     sound.playWhoosh();
-    setGameStage('playing');
+    storeRef.current.setState({ gameStage: 'playing' });
   }, []);
 
   const handleJoystickMove = useCallback((vector: { x: number; y: number }) => {
@@ -133,9 +108,9 @@ export default function App() {
 
   const handleToggleBuildMode = useCallback(() => {
     if (engineRef.current) {
-      engineRef.current.setBuildMode(!isBuildMode);
+      engineRef.current.setBuildMode(!gameState.isBuildMode);
     }
-  }, [isBuildMode]);
+  }, [gameState.isBuildMode]);
 
   const handleSelectBlueprint = useCallback((id: string) => {
     if (engineRef.current) {
@@ -151,22 +126,22 @@ export default function App() {
 
   const handleToggleMute = useCallback(() => {
     const muted = sound.toggleMute();
-    setIsMuted(muted);
+    storeRef.current.setState({ isMuted: muted });
   }, []);
 
   const handleResetPosition = useCallback(() => {
     if (engineRef.current) {
       engineRef.current.state.playerPos.set(0, 0, 0);
       engineRef.current.state.facingAngle = 0;
+      engineRef.current.syncInventoryState();
     }
-    setIsPaused(false);
+    storeRef.current.setState({ isPaused: false, playerCoord: { x: 0, z: 0, angle: 0 } });
   }, []);
 
   const horizon3IframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Auto-focus and forward game input events to Horizon III iframe
   useEffect(() => {
-    if (!horizon3Mode) return;
+    if (!gameState.horizon3Mode) return;
 
     const focusIframe = () => {
       if (horizon3IframeRef.current) {
@@ -174,20 +149,21 @@ export default function App() {
         try {
           horizon3IframeRef.current.contentWindow?.focus();
         } catch {
-          // Cross-origin safety
+          // cross-origin safety
         }
       }
     };
 
     focusIframe();
-    const t1 = setTimeout(focusIframe, 80);
-    const t2 = setTimeout(focusIframe, 300);
-    const t3 = setTimeout(focusIframe, 800);
+    const t1 = window.setTimeout(focusIframe, 80);
+    const t2 = window.setTimeout(focusIframe, 300);
+    const t3 = window.setTimeout(focusIframe, 800);
 
     const forwardKeyEvent = (e: KeyboardEvent, isDown: boolean) => {
       const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (targetTag === 'input' || targetTag === 'textarea') return;
 
+      const keyLower = e.key?.toLowerCase();
       const gameKeys = [
         'KeyW', 'KeyA', 'KeyS', 'KeyD',
         'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight',
@@ -196,10 +172,9 @@ export default function App() {
         'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0',
       ];
 
-      const keyLower = e.key?.toLowerCase();
       if (
         gameKeys.includes(e.code) ||
-        ['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(keyLower)
+        ['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(keyLower ?? '')
       ) {
         try {
           horizon3IframeRef.current?.contentWindow?.postMessage(
@@ -212,7 +187,7 @@ export default function App() {
             '*'
           );
         } catch {
-          // Ignore
+          // ignore
         }
       }
     };
@@ -224,13 +199,13 @@ export default function App() {
     window.addEventListener('keyup', handleWindowKeyUp);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
       window.removeEventListener('keydown', handleWindowKeyDown);
       window.removeEventListener('keyup', handleWindowKeyUp);
     };
-  }, [horizon3Mode]);
+  }, [gameState.horizon3Mode]);
 
   const handleCraft = useCallback((recipeId: string) => {
     if (engineRef.current) {
@@ -252,13 +227,11 @@ export default function App() {
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#090d16]">
-      {/* 1. Isolated 3D WebGL Canvas Container */}
       <div
         ref={canvasMountRef}
         className="absolute inset-0 w-full h-full z-0 overflow-hidden pointer-events-none"
       />
 
-      {/* 2. Full-Screen Look-Zone (Captures camera gestures on canvas, skips HUD) */}
       <div
         id="look-zone"
         ref={lookZoneRef}
@@ -266,16 +239,14 @@ export default function App() {
         style={{ touchAction: 'none' }}
       />
 
-      {/* 3. Title Screen Modal */}
-      {gameStage === 'title' && (
+      {gameState.gameStage === 'title' && (
         <TitleScreen
           onStart={handleStartGame}
-          onStartHorizon3={() => setHorizon3Mode(true)}
+          onStartHorizon3={() => storeRef.current.setState({ horizon3Mode: true })}
         />
       )}
 
-      {/* 3b. Project Horizon III Fullscreen Iframe Engine */}
-      {horizon3Mode && (
+      {gameState.horizon3Mode && (
         <div className="absolute inset-0 w-full h-full z-50 bg-[#07090e]">
           <iframe
             ref={horizon3IframeRef}
@@ -288,12 +259,12 @@ export default function App() {
               try {
                 horizon3IframeRef.current?.contentWindow?.focus();
               } catch {
-                // Ignore
+                // ignore
               }
             }}
           />
           <button
-            onClick={() => setHorizon3Mode(false)}
+            onClick={() => storeRef.current.setState({ horizon3Mode: false })}
             className="absolute top-4 right-4 z-50 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-xs text-slate-300 border border-slate-700 rounded-lg shadow-lg cursor-pointer"
           >
             ✕ Exit Horizon III
@@ -301,45 +272,39 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. Active In-Game HUD Elements (Low occlusion, world matched) */}
-      {gameStage === 'playing' && !horizon3Mode && (
+      {gameState.gameStage === 'playing' && !gameState.horizon3Mode && (
         <div className="absolute inset-0 pointer-events-none z-20">
-          {/* Top Left: Resources & quick buttons */}
           <StatusCluster
-            inventory={inventory}
-            activeTool={activeTool}
+            inventory={gameState.inventory}
+            activeTool={gameState.activeTool}
             onToggleTool={handleToggleTool}
-            isMuted={isMuted}
+            isMuted={gameState.isMuted}
             onToggleMute={handleToggleMute}
-            onOpenPause={() => setIsPaused(true)}
-            onOpenInventory={() => setIsInventoryOpen(true)}
-            usedSlots={inventoryUsed}
-            maxSlots={inventoryMax}
-            floatingTexts={floatingTexts}
+            onOpenPause={() => storeRef.current.setState({ isPaused: true })}
+            onOpenInventory={() => storeRef.current.setState({ isInventoryOpen: true })}
+            usedSlots={gameState.inventoryUsed}
+            maxSlots={gameState.inventoryMax}
+            floatingTexts={gameState.floatingTexts}
           />
 
-          {/* Top Right: Minimap */}
           <div className="absolute top-4 right-4 z-30 pointer-events-auto">
             <Minimap
-              playerX={playerCoord.x}
-              playerZ={playerCoord.z}
-              playerAngle={playerCoord.angle}
+              playerX={gameState.playerCoord.x}
+              playerZ={gameState.playerCoord.z}
+              playerAngle={gameState.playerCoord.angle}
             />
           </div>
 
-          {/* Bottom Left: Touch Joystick (Left 35% zone) */}
           <VirtualJoystick onMove={handleJoystickMove} />
 
-          {/* Bottom Center: Hotbar & Blueprint selection */}
           <Hotbar
-            isBuildMode={isBuildMode}
-            selectedBlueprint={selectedBlueprint}
+            isBuildMode={gameState.isBuildMode}
+            selectedBlueprint={gameState.selectedBlueprint}
             onToggleBuildMode={handleToggleBuildMode}
             onSelectBlueprint={handleSelectBlueprint}
-            inventory={inventory}
+            inventory={gameState.inventory}
           />
 
-          {/* Touch Camera Hint (Subtle right-side indicator) */}
           <div className="absolute bottom-6 right-6 pointer-events-none z-20 hidden md:block">
             <div className="text-[10px] tracking-wider text-slate-500 font-mono text-right uppercase">
               Right Zone: Drag to Look · Wheel/Pinch Zoom
@@ -348,25 +313,23 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Inventory & Crafting Fabricator Terminal */}
       <InventoryCraftingModal
-        isOpen={isInventoryOpen}
-        onClose={() => setIsInventoryOpen(false)}
-        slots={inventorySlots}
-        usedSlots={inventoryUsed}
-        maxSlots={inventoryMax}
-        equippedAxe={equippedAxe}
-        equippedPickaxe={equippedPickaxe}
+        isOpen={gameState.isInventoryOpen}
+        onClose={() => storeRef.current.setState({ isInventoryOpen: false })}
+        slots={gameState.inventorySlots}
+        usedSlots={gameState.inventoryUsed}
+        maxSlots={gameState.inventoryMax}
+        equippedAxe={gameState.equippedAxe}
+        equippedPickaxe={gameState.equippedPickaxe}
         onCraft={handleCraft}
         onUseSlot={handleUseSlot}
         onDropSlot={handleDropSlot}
       />
 
-      {/* 6. Pause & Settings Modal */}
       <PauseModal
-        isOpen={isPaused}
-        onClose={() => setIsPaused(false)}
-        isMuted={isMuted}
+        isOpen={gameState.isPaused}
+        onClose={() => storeRef.current.setState({ isPaused: false })}
+        isMuted={gameState.isMuted}
         onToggleMute={handleToggleMute}
         onResetPosition={handleResetPosition}
       />
