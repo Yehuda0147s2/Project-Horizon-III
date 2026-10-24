@@ -8,19 +8,24 @@ export function normalizeInputVector(
   joystickVector: InputVector = { x: 0, y: 0 }
 ): InputVector {
   let moveX = 0;
-  let moveZ = 0;
+  let moveY = 0;
 
-  if (keysHeld['KeyW'] || keysHeld['ArrowUp']) moveZ -= 1;
-  if (keysHeld['KeyS'] || keysHeld['ArrowDown']) moveZ += 1;
+  if (keysHeld['KeyW'] || keysHeld['ArrowUp']) moveY -= 1;
+  if (keysHeld['KeyS'] || keysHeld['ArrowDown']) moveY += 1;
   if (keysHeld['KeyA'] || keysHeld['ArrowLeft']) moveX -= 1;
   if (keysHeld['KeyD'] || keysHeld['ArrowRight']) moveX += 1;
 
   if (Math.hypot(joystickVector.x, joystickVector.y) > 0.05) {
     moveX += joystickVector.x;
-    moveZ += joystickVector.y;
+    moveY += joystickVector.y;
   }
 
-  return { x: moveX, y: moveZ };
+  const mag = Math.hypot(moveX, moveY);
+  if (mag > 1) {
+    return { x: moveX / mag, y: moveY / mag };
+  }
+
+  return { x: moveX, y: moveY };
 }
 
 export function isGameKeyEvent(code: string, key: string): boolean {
@@ -34,8 +39,11 @@ export function isGameKeyEvent(code: string, key: string): boolean {
   ];
 
   const lower = key.toLowerCase();
-  return (
-    gameKeys.includes(code) ||
-    ['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(lower)
-  );
+  const allowed = [
+    'w', 'a', 's', 'd', ' ', 'shift',
+    'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
+    'q', 'e', 'f', 'b', 'l', 'c', 'r', 'v'
+  ];
+
+  return gameKeys.includes(code) || allowed.includes(lower);
 }

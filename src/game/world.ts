@@ -59,10 +59,7 @@ function fbm(x: number, z: number): number {
   let norm = 0;
 
   for (let i = 0; i < 5; i++) {
-    const sampleX = x * freq;
-    const sampleZ = z * freq;
-    const n = hash2D(Math.floor(sampleX), Math.floor(sampleZ));
-    sum += n * amp;
+    sum += hash2D(Math.floor(x * freq), Math.floor(z * freq)) * amp;
     norm += amp;
     amp *= 0.52;
     freq *= 2.08;
@@ -121,45 +118,17 @@ export function createTerrainMesh(size = 160, segments = 220): THREE.Mesh {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
 
-  const mat = new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.9,
     metalness: 0.08,
     flatShading: false,
   });
 
-  const terrain = new THREE.Mesh(geo, mat);
+  const terrain = new THREE.Mesh(geo, material);
   terrain.name = 'terrain';
   terrain.receiveShadow = true;
   return terrain;
-}
-
-export function createTerrainChunk(centerX: number, centerZ: number, size = 48, segments = 56): THREE.Mesh {
-  const geo = new THREE.PlaneGeometry(size, size, segments, segments);
-  geo.rotateX(-Math.PI / 2);
-
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const localX = pos.getX(i);
-    const localZ = pos.getZ(i);
-    pos.setX(i, centerX + localX);
-    pos.setZ(i, centerZ + localZ);
-    pos.setY(i, getGroundHeight(centerX + localX, centerZ + localZ));
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x73b55f,
-    roughness: 0.92,
-    metalness: 0.08,
-    flatShading: false,
-  });
-  const chunk = new THREE.Mesh(geo, mat);
-  chunk.name = `terrainChunk_${centerX}_${centerZ}`;
-  chunk.receiveShadow = true;
-  chunk.castShadow = false;
-  return chunk;
 }
 
 export function populateResourceNodes(scene: THREE.Scene, centerX = 0, centerZ = 0, radius = 40): ResourceNode[] {
@@ -168,40 +137,35 @@ export function populateResourceNodes(scene: THREE.Scene, centerX = 0, centerZ =
 
   for (let gx = -sampleRadius; gx <= sampleRadius; gx++) {
     for (let gz = -sampleRadius; gz <= sampleRadius; gz++) {
-      const worldX = gx * 8 + (Math.sin(gx * 1.7 + gz * 2.3) * 1.8);
-      const worldZ = gz * 8 + (Math.cos(gx * 2.1 - gz * 1.9) * 1.7);
+      const worldX = gx * 8 + Math.sin(gx * 1.7 + gz * 2.3) * 1.8;
+      const worldZ = gz * 8 + Math.cos(gx * 2.1 - gz * 1.9) * 1.7;
       if (Math.hypot(worldX - centerX, worldZ - centerZ) > radius) continue;
 
       const noise = hash2D(Math.round(worldX * 10), Math.round(worldZ * 10));
       let type: ResourceNode['type'];
 
-      if (noise > 0.76) {
-        type = 'tree_pine';
-      } else if (noise > 0.55) {
-        type = 'tree_oak';
-      } else if (noise > 0.35) {
-        type = 'stone';
-      } else {
-        type = 'crystal';
-      }
+      if (noise > 0.76) type = 'tree_pine';
+      else if (noise > 0.55) type = 'tree_oak';
+      else if (noise > 0.35) type = 'stone';
+      else type = 'crystal';
 
-      const nodeMesh = type === 'tree_pine' || type === 'tree_oak'
+      const mesh = type === 'tree_pine' || type === 'tree_oak'
         ? createTreeMesh(type === 'tree_pine' ? 'pine' : 'oak')
         : createResourceNodeMesh(type);
 
       const y = getGroundHeight(worldX, worldZ);
-      nodeMesh.position.set(worldX, y, worldZ);
-      nodeMesh.rotation.y = noise * Math.PI * 2;
-      nodeMesh.scale.setScalar(0.8 + noise * 0.5);
-      scene.add(nodeMesh);
+      mesh.position.set(worldX, y, worldZ);
+      mesh.rotation.y = noise * Math.PI * 2;
+      mesh.scale.setScalar(0.8 + noise * 0.5);
+      scene.add(mesh);
 
       nodes.push({
         id: `res_${gx}_${gz}`,
         type,
-        position: nodeMesh.position.clone(),
+        position: mesh.position.clone(),
         health: type === 'crystal' ? 3 : type === 'stone' ? 5 : 4,
         maxHealth: type === 'crystal' ? 3 : type === 'stone' ? 5 : 4,
-        mesh: nodeMesh,
+        mesh,
         shakeTime: 0,
         shakeAngle: 0,
       });
@@ -239,9 +203,7 @@ export class ParticleSystem {
   burst(pos: THREE.Vector3, colorHex: number, count = 12): void {
     const color = new THREE.Color(colorHex);
     for (let i = 0; i < count; i++) {
-      if (this.particles.length >= this.maxParticles) {
-        this.particles.shift();
-      }
+      if (this.particles.length >= this.maxParticles) this.particles.shift();
       const angle = Math.random() * Math.PI * 2;
       const speed = 1.7 + Math.random() * 3.5;
       const up = 1.8 + Math.random() * 2.7;
