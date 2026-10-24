@@ -1,0 +1,3040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Project Horizon III: Dungeons, Powers & Weapon Systems</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #07090e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff; }
+    #canvas-container { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+    #look-zone { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; touch-action: none; pointer-events: auto; }
+    
+    /* HUD Overlays */
+    .hud-layer { position: absolute; inset: 0; pointer-events: none; z-index: 20; display: flex; flex-direction: column; justify-content: space-between; padding: 12px; transition: opacity 0.25s; }
+    .hud-layer.pro-minimal { opacity: 0.65; }
+    .interactive { pointer-events: auto; }
+    [data-hud] { touch-action: manipulation; }
+
+    /* Glass Panels */
+    .glass { background: rgba(13, 19, 33, 0.88); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+    button { background: rgba(30, 41, 59, 0.9); color: #e2e8f0; border: 1px solid rgba(71, 85, 105, 0.8); border-radius: 8px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; outline: none; }
+    button:hover { background: rgba(51, 65, 85, 0.98); border-color: #38bdf8; color: #fff; }
+    button:active { transform: scale(0.95); }
+
+    /* Status Clusters */
+    .top-bar { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
+    .chips-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip { display: flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 8px; font-size: 11px; font-family: monospace; font-weight: bold; }
+    .chip-wood { background: rgba(180, 83, 9, 0.3); border: 1px solid #b45309; color: #fcd34d; }
+    .chip-stone { background: rgba(100, 116, 139, 0.3); border: 1px solid #64748b; color: #e2e8f0; }
+    .chip-crystal { background: rgba(6, 182, 212, 0.3); border: 1px solid #06b6d4; color: #67e8f9; }
+    .chip-gold { background: rgba(234, 179, 8, 0.3); border: 1px solid #eab308; color: #fde047; }
+
+    /* Bars */
+    .stat-bars { display: flex; flex-direction: column; gap: 4px; width: 160px; margin-top: 8px; }
+    .bar-bg { width: 100%; height: 9px; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 5px; overflow: hidden; }
+    .bar-hp { height: 100%; background: linear-gradient(90deg, #dc2626, #ef4444); width: 100%; transition: width 0.15s; }
+    .bar-mp { height: 100%; background: linear-gradient(90deg, #0284c7, #38bdf8); width: 100%; transition: width 0.15s; }
+
+    /* Boss Bar */
+    #boss-container { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(440px, 88vw); text-align: center; display: none; z-index: 25; }
+    #boss-name { font-size: 13px; font-weight: 800; text-transform: uppercase; color: #f43f5e; letter-spacing: 1.5px; text-shadow: 0 0 10px rgba(244,63,94,0.6); }
+    #boss-bar { width: 100%; height: 13px; background: #1e1b4b; border: 1.5px solid #818cf8; border-radius: 7px; overflow: hidden; margin-top: 4px; box-shadow: 0 0 15px rgba(129,140,248,0.4); }
+    #boss-hp { height: 100%; background: linear-gradient(90deg, #ec4899, #8b5cf6); width: 100%; transition: width 0.2s ease-out; }
+
+    /* Minimap */
+    #minimap-wrap { position: relative; width: 105px; height: 105px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(56,189,248,0.5); background: rgba(9,13,22,0.92); box-shadow: 0 0 18px rgba(0,0,0,0.8); }
+    #minimap-canvas { width: 100%; height: 100%; display: block; }
+
+    /* Bottom Bar & Hotbar */
+    .bottom-bar { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; width: 100%; }
+    .active-indicators { display: flex; gap: 10px; align-items: center; font-size: 11px; font-weight: bold; flex-wrap: wrap; justify-content: center; }
+    .indicator-slot { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: rgba(15, 23, 42, 0.95); border: 1px solid #38bdf8; box-shadow: 0 0 10px rgba(56,189,248,0.2); }
+    .hotbar { display: flex; gap: 6px; padding: 6px 10px; border-radius: 14px; background: rgba(10, 15, 26, 0.92); border: 1px solid rgba(56,189,248,0.4); overflow-x: auto; max-width: 95vw; }
+    .hotbar-slot { width: 44px; height: 44px; border-radius: 10px; background: rgba(30, 41, 59, 0.8); border: 1px solid #475569; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; cursor: pointer; font-size: 10px; font-weight: bold; flex-shrink: 0; }
+    .hotbar-slot.active { border-color: #38bdf8; background: rgba(56, 189, 248, 0.3); box-shadow: 0 0 12px rgba(56,189,248,0.6); }
+    .hotbar-slot .key { position: absolute; top: 2px; left: 4px; font-size: 8px; color: #94a3b8; }
+    .hotbar-slot .durability { position: absolute; bottom: 2px; left: 4px; right: 4px; height: 3px; background: #10b981; border-radius: 2px; }
+
+    /* Dual Movement: Analog Virtual Joystick + Directional D-Pad */
+    #vjoy-container { position: absolute; bottom: 20px; left: 20px; z-index: 32; width: 100px; height: 100px; pointer-events: auto; touch-action: none; transition: transform 0.1s ease-out; }
+    #vjoy-base { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(15,23,42,0.85) 0%, rgba(30,41,59,0.6) 65%, rgba(56,189,248,0.25) 100%); border: 2px solid rgba(56, 189, 248, 0.6); box-shadow: 0 0 18px rgba(56,189,248,0.3); display: flex; align-items: center; justify-content: center; }
+    #vjoy-knob { width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle, #38bdf8 0%, #0284c7 85%); border: 2px solid #ffffff; box-shadow: 0 0 14px rgba(56,189,248,0.9); position: absolute; transform: translate(0, 0); pointer-events: none; }
+    #vjoy-label { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 9px; font-family: monospace; color: #94a3b8; white-space: nowrap; pointer-events: none; }
+
+    #dpad-cluster { position: absolute; bottom: 20px; left: 130px; z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 4px; touch-action: none; }
+    .dpad-row { display: flex; gap: 4px; }
+    .dpad-btn { width: 42px; height: 42px; border-radius: 10px; background: rgba(15, 23, 42, 0.88); border: 1.5px solid rgba(56, 189, 248, 0.5); font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; color: #38bdf8; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+    .dpad-btn:active, .dpad-btn.pressed { background: #38bdf8; color: #0f172a; transform: scale(0.92); }
+
+    /* Action Buttons (Right) */
+    .action-cluster { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; z-index: 30; }
+    .action-row { display: flex; gap: 8px; }
+    .btn-action { width: 50px; height: 50px; border-radius: 50%; font-size: 11px; font-weight: 800; text-transform: uppercase; border: 2px solid #38bdf8; background: rgba(15,23,42,0.9); box-shadow: 0 4px 14px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+    .btn-attack { background: linear-gradient(135deg, #ef4444, #b91c1c); border-color: #f87171; color: white; }
+    .btn-cast { background: linear-gradient(135deg, #38bdf8, #0284c7); border-color: #7dd3fc; color: #0f172a; }
+
+    /* Radial Menu */
+    #radial-menu { position: fixed; inset: 0; z-index: 100; background: rgba(4, 7, 14, 0.75); display: none; align-items: center; justify-content: center; }
+    #radial-wheel { width: 280px; height: 280px; position: relative; border-radius: 50%; border: 2px solid rgba(56, 189, 248, 0.4); }
+    .radial-item { position: absolute; width: 62px; height: 62px; border-radius: 50%; background: rgba(15, 23, 42, 0.95); border: 2px solid #475569; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(-50%, -50%); cursor: pointer; transition: all 0.15s; font-size: 9px; font-weight: bold; text-align: center; }
+    .radial-item.hovered { border-color: #38bdf8; transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 0 16px #38bdf8; background: #0369a1; }
+
+    /* Modals & Menus */
+    .modal-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(3, 7, 18, 0.88); display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-box { width: min(680px, 95vw); max-height: 88vh; overflow-y: auto; background: #0f172a; border: 1.5px solid #38bdf8; border-radius: 16px; padding: 22px; box-shadow: 0 20px 50px rgba(0,0,0,0.9); }
+
+    /* Pro Control Settings Cards */
+    .scheme-card { background: rgba(30, 41, 59, 0.75); border: 2px solid #334155; border-radius: 12px; padding: 12px; cursor: pointer; transition: all 0.18s; }
+    .scheme-card:hover { border-color: #38bdf8; background: rgba(56, 189, 248, 0.15); }
+    .scheme-card.active { border-color: #38bdf8; background: rgba(56, 189, 248, 0.25); box-shadow: 0 0 14px rgba(56,189,248,0.4); }
+    .preset-btn { background: rgba(15, 23, 42, 0.9); border: 1px solid #475569; padding: 5px 12px; font-size: 11px; font-weight: 600; border-radius: 8px; color: #cbd5e1; }
+    .preset-btn:hover { border-color: #38bdf8; color: #fff; background: rgba(56,189,248,0.2); }
+    .cam-dist-btn { flex: 1; background: rgba(30,41,59,0.8); border: 1px solid #475569; padding: 6px 8px; font-size: 11px; font-weight: 600; border-radius: 8px; color: #94a3b8; }
+    .cam-dist-btn.active { border-color: #38bdf8; background: #0284c7; color: #fff; }
+
+    /* Floating Combat Numbers */
+    .dmg-num { position: absolute; font-weight: 900; font-family: monospace; font-size: 16px; pointer-events: none; z-index: 40; text-shadow: 0 2px 4px rgba(0,0,0,0.9); transform: translate(-50%, -50%); transition: opacity 0.4s ease-out; }
+    
+    /* Prompt Banner */
+    #dungeon-prompt { position: absolute; top: 72%; left: 50%; transform: translate(-50%, -50%); background: rgba(15, 23, 42, 0.95); border: 2px solid #a855f7; border-radius: 12px; padding: 12px 24px; text-align: center; display: none; z-index: 35; box-shadow: 0 0 30px rgba(168, 85, 247, 0.5); }
+    
+    /* Focus & Controls Instruction */
+    #focus-hint { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); font-size: 11px; font-family: monospace; background: rgba(15,23,42,0.85); border: 1px solid #334155; padding: 5px 12px; border-radius: 6px; pointer-events: none; opacity: 0.9; text-align: center; white-space: nowrap; }
+
+    /* Focus lost prompt overlay */
+    #click-to-focus { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(234, 179, 8, 0.92); color: #0f172a; font-weight: 800; font-size: 11px; padding: 4px 12px; border-radius: 20px; z-index: 45; display: none; cursor: pointer; box-shadow: 0 0 15px rgba(234, 179, 8, 0.6); }
+  </style>
+</head>
+<body tabindex="0">
+  <div id="canvas-container"></div>
+  <div id="look-zone"></div>
+  <div id="click-to-focus">Click anywhere to Focus & Control</div>
+
+  <!-- HUD Layer -->
+  <div class="hud-layer" id="main-hud">
+    <!-- Top Row -->
+    <div class="top-bar">
+      <div>
+        <div class="chips-group interactive">
+          <div class="chip chip-wood" data-hud>🪵 <span id="chip-wood">15</span></div>
+          <div class="chip chip-stone" data-hud>🪨 <span id="chip-stone">10</span></div>
+          <div class="chip chip-crystal" data-hud>💎 <span id="chip-crystal">6</span></div>
+          <div class="chip chip-gold" data-hud>🪙 <span id="chip-gold">0</span></div>
+          <button data-hud id="btn-tree-toggle">Ascend (L)</button>
+          <button data-hud id="btn-builder-toggle">Builder (B)</button>
+          <button data-hud id="btn-settings-toggle" style="background: rgba(14, 165, 233, 0.28); border-color: #38bdf8; font-weight: bold;">⚙️ Controls (P)</button>
+        </div>
+
+        <div class="stat-bars">
+          <div class="bar-bg"><div id="hp-bar" class="bar-hp"></div></div>
+          <div class="bar-bg"><div id="mp-bar" class="bar-mp"></div></div>
+          <div style="font-size: 10px; font-family: monospace; color: #94a3b8; display: flex; justify-content: space-between;">
+            <span>HP: <span id="hp-val">100</span>/100</span>
+            <span>MP: <span id="mp-val">100</span>/100</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Boss Container -->
+      <div id="boss-container">
+        <div id="boss-name">ANCIENT DREAD COLOSSUS</div>
+        <div id="boss-bar"><div id="boss-hp"></div></div>
+      </div>
+
+      <!-- Minimap & Level Indicator -->
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+        <div id="minimap-wrap" class="interactive" data-hud>
+          <canvas id="minimap-canvas" width="105" height="105"></canvas>
+        </div>
+        <div id="biome-label" style="font-size: 10px; font-family: monospace; color: #38bdf8; text-transform: uppercase;">Overworld Frontier</div>
+        <div id="combo-label" style="font-size: 14px; font-family: monospace; font-weight: bold; color: #f59e0b; display: none;">COMBO x2!</div>
+      </div>
+    </div>
+
+    <div id="focus-hint">WASD / Arrow Keys / Left Stick to Move · Drag Right to Look · Space: Roll · P: Controls</div>
+
+    <!-- Bottom Row: Active Equip + Hotbar -->
+    <div class="bottom-bar">
+      <div class="active-indicators interactive">
+        <div class="indicator-slot" data-hud>
+          <span>⚔️</span><span id="label-active-weapon">Iron Sword</span>
+        </div>
+        <div class="indicator-slot" data-hud>
+          <span>🔥</span><span id="label-active-power">Fireball</span>
+        </div>
+        <button data-hud id="btn-flight-toggle" style="background: rgba(14, 165, 233, 0.25); border-color: #0ea5e9;">Flight: OFF (F)</button>
+      </div>
+
+      <!-- 8-Slot Hotbar -->
+      <div class="hotbar interactive" id="hotbar-slots"></div>
+    </div>
+  </div>
+
+  <!-- Dual Movement Controls: 360° Analog Virtual Joystick + Directional D-Pad -->
+  <div id="vjoy-container" class="interactive" data-hud>
+    <div id="vjoy-base">
+      <div id="vjoy-knob"></div>
+    </div>
+    <div id="vjoy-label">JOYSTICK</div>
+  </div>
+
+  <div id="dpad-cluster" class="interactive" data-hud>
+    <button class="dpad-btn" id="dpad-up" data-hud>▲</button>
+    <div class="dpad-row">
+      <button class="dpad-btn" id="dpad-left" data-hud>◀</button>
+      <button class="dpad-btn" id="dpad-down" data-hud>▼</button>
+      <button class="dpad-btn" id="dpad-right" data-hud>▶</button>
+    </div>
+    <span style="font-size: 8px; font-family: monospace; color: #94a3b8; margin-top: 2px;">WASD PAD</span>
+  </div>
+
+  <!-- Mobile Action Buttons (Right) -->
+  <div class="action-cluster interactive" data-hud>
+    <div class="action-row">
+      <button class="btn-action btn-attack" id="btn-touch-atk" data-hud>ATK</button>
+      <button class="btn-action btn-cast" id="btn-touch-cast" data-hud>CAST</button>
+    </div>
+    <div class="action-row">
+      <button class="btn-action" id="btn-touch-dodge" data-hud>ROLL</button>
+      <button class="btn-action" id="btn-touch-radial" data-hud>RADIAL</button>
+    </div>
+  </div>
+
+  <!-- Radial Menu Overlay -->
+  <div id="radial-menu" class="interactive" data-hud>
+    <div id="radial-wheel"></div>
+  </div>
+
+  <!-- Dungeon Entry Prompt -->
+  <div id="dungeon-prompt" class="interactive" data-hud>
+    <div style="font-size: 15px; font-weight: bold; color: #d8b4fe;" id="portal-title">Sunken Crypt (Rank I)</div>
+    <div style="font-size: 11px; color: #cbd5e1; margin: 4px 0 10px;">Enemies: Grunts, Sorcerers, Ancient Colossus Boss</div>
+    <button id="btn-enter-dungeon" style="background: #9333ea; border-color: #c084fc; font-weight: bold; padding: 8px 16px;">ENTER DUNGEON (E)</button>
+  </div>
+
+  <!-- PRO CONTROLS & SETTINGS MODAL -->
+  <div id="modal-settings" class="modal-overlay">
+    <div class="modal-box">
+      <!-- Modal Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 22px;">⚙️</span>
+          <div>
+            <h3 style="color: #38bdf8; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">PRO CONTROLS & INPUT SETTINGS</h3>
+            <p style="font-size: 11px; color: #94a3b8;">Choose movement schemes, adjust touch response, and tune controls like a pro</p>
+          </div>
+        </div>
+        <button id="btn-close-settings" style="font-size: 14px; padding: 4px 10px;">✕</button>
+      </div>
+
+      <!-- Quick Presets -->
+      <div style="margin-bottom: 16px;">
+        <label style="font-size: 11px; font-weight: bold; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; display: block;">⚡ Pro Quick Presets</label>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="preset-btn" onclick="applySettingsPreset('mobile_pro')">📱 Mobile Pro</button>
+          <button class="preset-btn" onclick="applySettingsPreset('hybrid_tactile')">🕹️ Dual Hybrid</button>
+          <button class="preset-btn" onclick="applySettingsPreset('tap_arpg')">🎯 ARPG Click-Move</button>
+          <button class="preset-btn" onclick="applySettingsPreset('desktop_veteran')">💻 Desktop Master</button>
+          <button class="preset-btn" onclick="applySettingsPreset('left_handed')">🖐️ Left-Handed Pro</button>
+        </div>
+      </div>
+
+      <!-- Select Movement Scheme -->
+      <div style="margin-bottom: 18px;">
+        <label style="font-size: 11px; font-weight: bold; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; display: block;">🕹️ Select Movement Control Scheme</label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px;">
+          <!-- 1. Dual Hybrid -->
+          <div class="scheme-card" id="card-scheme-hybrid" onclick="selectControlScheme('hybrid')">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: bold; font-size: 12px; color: #38bdf8;">Dual Hybrid</span>
+              <span style="font-size: 16px;">🕹️➕◀️</span>
+            </div>
+            <p style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Analog joystick + tactile WASD pad side-by-side. Maximum versatility.</p>
+          </div>
+
+          <!-- 2. Floating Joystick -->
+          <div class="scheme-card" id="card-scheme-floating" onclick="selectControlScheme('floating')">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: bold; font-size: 12px; color: #38bdf8;">Floating Joystick</span>
+              <span style="font-size: 16px;">🔘</span>
+            </div>
+            <p style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Dynamic stick appears wherever you touch. Competitive mobile standard.</p>
+          </div>
+
+          <!-- 3. Fixed Virtual Joystick -->
+          <div class="scheme-card" id="card-scheme-joystick" onclick="selectControlScheme('joystick')">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: bold; font-size: 12px; color: #38bdf8;">Fixed Joystick</span>
+              <span style="font-size: 16px;">🕹️</span>
+            </div>
+            <p style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Stationary 360° arcade stick fixed in corner with clean screen space.</p>
+          </div>
+
+          <!-- 4. Tactile D-Pad -->
+          <div class="scheme-card" id="card-scheme-dpad" onclick="selectControlScheme('dpad')">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: bold; font-size: 12px; color: #38bdf8;">Tactile D-Pad</span>
+              <span style="font-size: 16px;">🎮</span>
+            </div>
+            <p style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Discrete 4-way direction buttons. Great for precision navigation.</p>
+          </div>
+
+          <!-- 5. Tap / Click to Move -->
+          <div class="scheme-card" id="card-scheme-tap" onclick="selectControlScheme('tap_to_move')">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: bold; font-size: 12px; color: #38bdf8;">Click-to-Move</span>
+              <span style="font-size: 16px;">🎯</span>
+            </div>
+            <p style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Tap or click terrain to walk to cursor with ground destination decal.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pro Tuning & Sensitivity Matrix -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; background: rgba(15,23,42,0.6); padding: 14px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 16px;">
+        <!-- Camera Sensitivity Slider -->
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+            <span style="color: #cbd5e1; font-weight: bold;">Camera Look Sensitivity</span>
+            <span id="label-sens" style="color: #38bdf8; font-family: monospace;">1.0x</span>
+          </div>
+          <input type="range" id="slider-sens" min="0.4" max="2.6" step="0.1" value="1.0" style="width: 100%; accent-color: #38bdf8; cursor: pointer;">
+          <div style="display: flex; justify-content: space-between; font-size: 9px; color: #64748b;">
+            <span>0.4x Smooth</span>
+            <span>1.0x Normal</span>
+            <span>2.6x Twitch</span>
+          </div>
+        </div>
+
+        <!-- Joystick Deadzone Slider -->
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+            <span style="color: #cbd5e1; font-weight: bold;">Joystick Deadzone</span>
+            <span id="label-deadzone" style="color: #38bdf8; font-family: monospace;">4px</span>
+          </div>
+          <input type="range" id="slider-deadzone" min="1" max="14" step="1" value="4" style="width: 100%; accent-color: #38bdf8; cursor: pointer;">
+          <div style="display: flex; justify-content: space-between; font-size: 9px; color: #64748b;">
+            <span>1px Instant</span>
+            <span>4px Pro</span>
+            <span>14px Casual</span>
+          </div>
+        </div>
+
+        <!-- Camera Distance Mode -->
+        <div>
+          <label style="font-size: 11px; font-weight: bold; color: #cbd5e1; display: block; margin-bottom: 4px;">Camera Distance Preset</label>
+          <div style="display: flex; gap: 6px;">
+            <button class="cam-dist-btn" id="btn-cam-close" onclick="setCamDistancePreset('close')">Close (3.8m)</button>
+            <button class="cam-dist-btn" id="btn-cam-standard" onclick="setCamDistancePreset('standard')">Standard (5.6m)</button>
+            <button class="cam-dist-btn" id="btn-cam-tactical" onclick="setCamDistancePreset('tactical')">Tactical (9.2m)</button>
+          </div>
+        </div>
+
+        <!-- Toggles Grid -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+            <span>Invert Y Pitch Axis</span>
+            <input type="checkbox" id="check-invert-y" style="accent-color: #38bdf8; width: 16px; height: 16px; cursor: pointer;">
+          </label>
+
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+            <span>Auto-Sprint (Always Fast)</span>
+            <input type="checkbox" id="check-auto-sprint" style="accent-color: #38bdf8; width: 16px; height: 16px; cursor: pointer;">
+          </label>
+
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+            <span>Left-Handed Mode (Swap Sides)</span>
+            <input type="checkbox" id="check-left-handed" style="accent-color: #38bdf8; width: 16px; height: 16px; cursor: pointer;">
+          </label>
+
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+            <span>Pro Minimal HUD (Low Occlusion)</span>
+            <input type="checkbox" id="check-minimal-hud" style="accent-color: #38bdf8; width: 16px; height: 16px; cursor: pointer;">
+          </label>
+        </div>
+      </div>
+
+      <!-- Desktop Pro Key Remap Reference -->
+      <div style="margin-bottom: 14px; font-size: 10px; color: #94a3b8; background: #0b1329; border: 1px solid #1e293b; padding: 10px; border-radius: 8px;">
+        <span style="font-weight: bold; color: #38bdf8;">KEYBOARD & SHORTCUTS MATRIX:</span>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin-top: 6px; font-family: monospace;">
+          <div><b style="color:#f1f5f9;">WASD / Arrows:</b> Move</div>
+          <div><b style="color:#f1f5f9;">Space:</b> Dodge Roll</div>
+          <div><b style="color:#f1f5f9;">Shift:</b> Sprint</div>
+          <div><b style="color:#f1f5f9;">Q:</b> Radial Menu</div>
+          <div><b style="color:#f1f5f9;">1 - 8:</b> Hotbar Swap</div>
+          <div><b style="color:#f1f5f9;">E:</b> Enter Portal</div>
+          <div><b style="color:#f1f5f9;">B:</b> Pro Builder</div>
+          <div><b style="color:#f1f5f9;">L:</b> Talent Tree</div>
+          <div><b style="color:#f1f5f9;">P / Esc:</b> Settings</div>
+        </div>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #334155; padding-top: 12px;">
+        <button onclick="resetControlDefaults()" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fca5a5;">Reset to Defaults</button>
+        <button id="btn-save-settings" style="background: #0284c7; border-color: #38bdf8; color: #fff; font-weight: bold; padding: 8px 18px;">Apply & Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other Modals -->
+  <div id="modal-builder" class="modal-overlay">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="color: #38bdf8; font-size: 16px;">PRO BUILDING EDITOR</h3>
+        <button id="btn-close-builder">✕</button>
+      </div>
+      <div id="builder-sub-panel"></div>
+    </div>
+  </div>
+
+  <div id="modal-talents" class="modal-overlay">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="color: #38bdf8; font-size: 16px;">HERO TALENT ASCENSION</h3>
+        <button id="btn-close-talents">✕</button>
+      </div>
+      <div style="font-size: 12px; margin-bottom: 12px; color: #94a3b8;">
+        Level: <span id="tree-level" style="color: #fff; font-weight: bold;">1</span> · 
+        XP: <span id="tree-xp" style="color: #38bdf8; font-weight: bold;">0</span> · 
+        Points Available: <span id="tree-points" style="color: #fde047; font-weight: bold;">1</span>
+      </div>
+      <div id="talent-branches" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;"></div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    // Auto-focus on start & interaction
+    window.focus();
+    document.body.focus();
+    window.addEventListener('pointerdown', () => { window.focus(); document.getElementById('click-to-focus').style.display = 'none'; });
+    window.addEventListener('click', () => { window.focus(); document.getElementById('click-to-focus').style.display = 'none'; });
+    window.addEventListener('blur', () => {
+      document.getElementById('click-to-focus').style.display = 'block';
+    });
+    window.addEventListener('focus', () => {
+      document.getElementById('click-to-focus').style.display = 'none';
+    });
+    document.getElementById('click-to-focus').onclick = () => { window.focus(); };
+
+    // ----------------------------------------------------
+    // PRO CONTROL SETTINGS STATE
+    // ----------------------------------------------------
+    const controlSettings = {
+      scheme: localStorage.getItem('horizon_scheme') || 'hybrid', // 'hybrid' | 'floating' | 'joystick' | 'dpad' | 'tap_to_move'
+      handedness: localStorage.getItem('horizon_handedness') || 'right_handed', // 'right_handed' | 'left_handed'
+      cameraSensitivity: parseFloat(localStorage.getItem('horizon_cam_sens') || '1.0'),
+      deadzone: parseInt(localStorage.getItem('horizon_deadzone') || '4', 10),
+      invertY: localStorage.getItem('horizon_invert_y') === 'true',
+      autoSprint: localStorage.getItem('horizon_auto_sprint') === 'true',
+      camDistancePreset: localStorage.getItem('horizon_cam_preset') || 'standard',
+      hudStyle: localStorage.getItem('horizon_hud_style') || 'normal'
+    };
+
+    // ----------------------------------------------------
+    // 1. CONFIG & SYSTEM TUNABLES
+    // ----------------------------------------------------
+    const CONFIG = {
+      player: {
+        speed: 7.2,
+        sprintSpeed: 11.5,
+        turnSpeed: 18.0,
+      },
+      camera: {
+        distance: 5.6,
+        minDistance: 2.2,
+        maxDistance: 12.0,
+        pitch: -0.32,
+        minPitch: -1.2,
+        maxPitch: 0.45,
+      },
+      dungeon: {
+        tileSize: 4,
+        wallHeight: 4.5,
+      }
+    };
+
+    // ----------------------------------------------------
+    // 2. AUDIO SYNTHESIS ENGINE (0 EXTERNAL ASSET DEPS)
+    // ----------------------------------------------------
+    class ProceduralAudio {
+      constructor() {
+        this.ctx = null;
+        this.isMuted = false;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) this.ctx = new AudioContextClass();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playTone(freq, duration, type = 'sine', decay = true) {
+        if (this.isMuted || !this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+          if (decay) gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+      }
+      swing() {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.16);
+          gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.16);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.16);
+        } catch(e) {}
+      }
+      hit() {
+        this.playTone(110, 0.12, 'sawtooth');
+      }
+      castFire() {
+        this.playTone(240, 0.25, 'sawtooth');
+      }
+      castIce() {
+        this.playTone(850, 0.2, 'sine');
+      }
+      castLightning() {
+        this.playTone(920, 0.15, 'sawtooth');
+      }
+      levelUp() {
+        [440, 554, 659, 880].forEach((f, i) => setTimeout(() => this.playTone(f, 0.25, 'triangle'), i * 75));
+      }
+      roar() {
+        this.playTone(65, 0.6, 'sawtooth');
+      }
+    }
+    const sound = new ProceduralAudio();
+
+    // ----------------------------------------------------
+    // WEAPONS & POWERS DEFINITIONS
+    // ----------------------------------------------------
+    const WEAPONS = {
+      sword:      { name: 'Iron Runeblade', type: 'melee', dmg: 26, reach: 2.8, arc: Math.PI * 0.7, cd: 0.35 },
+      greatsword: { name: 'Great Claymore', type: 'melee', dmg: 48, reach: 3.5, arc: Math.PI * 0.9, cd: 0.75 },
+      bow:        { name: 'Elven Longbow', type: 'ranged', dmg: 22, range: 45, cd: 0.5 },
+      staff:      { name: 'Archmage Staff', type: 'magic', dmg: 32, range: 35, cd: 0.45 },
+      pistol:     { name: 'Flintlock Pistol', type: 'ranged', dmg: 35, range: 25, cd: 0.6 },
+      rifle:      { name: 'Aether Rifle', type: 'ranged', dmg: 55, range: 60, cd: 0.9 },
+      grenade:    { name: 'Magma Grenade', type: 'thrown', dmg: 70, range: 20, aoe: 5, cd: 1.8 }
+    };
+
+    const POWERS = {
+      fire:      { name: 'Fireball', cost: 20, cd: 1.5, type: 'projectile', dmg: 50, aoe: 3.2, color: 0xff4400 },
+      ice:       { name: 'Ice Shard', cost: 18, cd: 1.0, type: 'projectile', dmg: 38, slow: 0.5, color: 0x00f0ff },
+      lightning: { name: 'Chain Lightning', cost: 26, cd: 3.0, type: 'instant_bolt', dmg: 60, color: 0xfacc15 },
+      telekinesis:{ name: 'Force Push', cost: 15, cd: 2.0, type: 'radial_push', dmg: 22, force: 16, color: 0xa855f7 },
+      flight:    { name: 'Sky Flight', cost: 5, cd: 0, type: 'toggle', color: 0x38bdf8 }
+    };
+
+    // ----------------------------------------------------
+    // 3. MASTER GAME STATE
+    // ----------------------------------------------------
+    const state = {
+      inDungeon: false,
+      activeDungeon: null,
+      portalNearby: null,
+      timeScale: 1.0,
+      navTarget: null, // Click-to-move destination
+
+      // Player stats
+      hp: 100, maxHp: 100,
+      mp: 100, maxMp: 100,
+      level: 1, xp: 0, xpNeeded: 100, talentPoints: 1,
+      isFlight: false,
+      isDodging: false,
+      dodgeTimer: 0,
+
+      // Inventory & Gear
+      gold: 0, wood: 15, stone: 10, crystal: 6,
+      equippedWeapon: 'sword',
+      equippedPower: 'fire',
+      hotbar: ['sword', 'greatsword', 'bow', 'staff', 'fire', 'ice', 'lightning', 'telekinesis'],
+      cooldowns: {},
+      comboCount: 0,
+      comboTimer: 0,
+
+      // Camera & Input
+      yaw: 0, pitch: -0.32, targetYaw: 0, targetPitch: -0.32,
+      cameraDistance: CONFIG.camera.distance,
+
+      // Talents allocated
+      talents: { warrior: 0, mage: 0, ranger: 0 },
+
+      // Pro Builder state
+      isBuilderOpen: false,
+      buildMode: 'place',
+      selectedBlueprint: 'shelter',
+      undoStack: [],
+      redoStack: []
+    };
+
+    // ----------------------------------------------------
+    // 4. THREE.JS ENGINE SETUP & PBR STUDIO LIGHTING
+    // ----------------------------------------------------
+    const container = document.getElementById('canvas-container');
+    const lookZone = document.getElementById('look-zone');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080e1a);
+    scene.fog = new THREE.FogExp2(0x080e1a, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 400);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const raycaster = new THREE.Raycaster();
+
+    // Destination Target Ring Decal (for Click-to-Move)
+    const targetRingGeo = new THREE.RingGeometry(0.5, 0.72, 28);
+    const targetRingMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0
+    });
+    const targetRingMesh = new THREE.Mesh(targetRingGeo, targetRingMat);
+    targetRingMesh.rotation.x = -Math.PI / 2;
+    targetRingMesh.visible = false;
+    scene.add(targetRingMesh);
+
+    // Dynamic Sky Dome & Stars
+    const skyGeo = new THREE.SphereGeometry(300, 24, 16);
+    const skyMat = new THREE.MeshBasicMaterial({
+      color: 0x091428,
+      side: THREE.BackSide
+    });
+    const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(skyMesh);
+
+    // 350 Twinkling Celestial Stars
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 350;
+    const starPositions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      const r = 260;
+      starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      starPositions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 15;
+      starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xbae6fd, size: 1.8, transparent: true, opacity: 0.85 });
+    const starParticles = new THREE.Points(starGeo, starMat);
+    scene.add(starParticles);
+
+    // Warm & Cool Studio Lighting Rig
+    const hemiLight = new THREE.HemisphereLight(0x7dd3fc, 0x1e293b, 0.95);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffeedd, 2.3);
+    sunLight.position.set(30, 48, 24);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 120;
+    sunLight.shadow.camera.left = -40;
+    sunLight.shadow.camera.right = 40;
+    sunLight.shadow.camera.top = 40;
+    sunLight.shadow.camera.bottom = -40;
+    sunLight.shadow.bias = -0.0003;
+    sunLight.shadow.normalBias = 0.02;
+    scene.add(sunLight);
+
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.8);
+    rimLight.position.set(-22, 18, -22);
+    scene.add(rimLight);
+
+    // ----------------------------------------------------
+    // 5. HIGH-QUALITY OVERWORLD WORLD & DUNGEON PORTALS
+    // ----------------------------------------------------
+    function getOverworldHeight(x, z) {
+      return (
+        Math.sin(x * 0.045) * Math.cos(z * 0.045) * 2.4 +
+        Math.sin(x * 0.10 + 1.2) * 0.75 +
+        Math.cos(z * 0.12 - 0.7) * 0.55
+      );
+    }
+
+    const overworldGroup = new THREE.Group();
+    const terrainSize = 160;
+    const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, 100, 100);
+    terrainGeo.rotateX(-Math.PI / 2);
+    const pos = terrainGeo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+
+    const colGrass = new THREE.Color(0x275522);
+    const colHill = new THREE.Color(0x3d7032);
+    const colRock = new THREE.Color(0x576173);
+    const colPath = new THREE.Color(0x786247);
+
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i);
+      const vy = getOverworldHeight(vx, vz);
+      pos.setY(i, vy);
+
+      const c = new THREE.Color();
+      const onPath1 = Math.abs(vx - vz * 0.9) < 2.8;
+      const onPath2 = Math.abs(vx + vz * 0.8) < 2.5;
+
+      if (onPath1 || onPath2) {
+        c.copy(colPath);
+      } else if (vy > 1.8) {
+        c.lerpColors(colHill, colRock, Math.min(1, (vy - 1.8) / 1.6));
+      } else {
+        c.lerpColors(colGrass, colHill, Math.min(1, (vy + 2.2) / 4.0));
+      }
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    terrainGeo.computeVertexNormals();
+
+    const terrainMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.78,
+      metalness: 0.12,
+      flatShading: true,
+    });
+    const overworldTerrain = new THREE.Mesh(terrainGeo, terrainMat);
+    overworldTerrain.receiveShadow = true;
+    overworldGroup.add(overworldTerrain);
+
+    // Atmospheric Floating Magic Motes (120 animated embers/fireflies)
+    const motesCount = 120;
+    const motesGeo = new THREE.BufferGeometry();
+    const motesPos = new Float32Array(motesCount * 3);
+    for (let i = 0; i < motesCount; i++) {
+      motesPos[i * 3] = (Math.random() - 0.5) * 120;
+      motesPos[i * 3 + 1] = Math.random() * 6 + 0.5;
+      motesPos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+    }
+    motesGeo.setAttribute('position', new THREE.BufferAttribute(motesPos, 3));
+    const motesMat = new THREE.PointsMaterial({
+      color: 0x38bdf8,
+      size: 1.4,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending
+    });
+    const motesMesh = new THREE.Points(motesGeo, motesMat);
+    overworldGroup.add(motesMesh);
+
+    // Procedural Composite Pine Trees
+    for (let i = 0; i < 42; i++) {
+      const tx = (Math.random() - 0.5) * 130;
+      const tz = (Math.random() - 0.5) * 130;
+      if (Math.hypot(tx, tz) < 9) continue;
+      const ty = getOverworldHeight(tx, tz);
+
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.42, 2.6, 7),
+        new THREE.MeshStandardMaterial({ color: 0x3d2616, roughness: 0.9 })
+      );
+      trunk.position.y = 1.3;
+      trunk.castShadow = true;
+
+      [
+        { r: 2.0, h: 2.2, y: 2.6, c: 0x184224 },
+        { r: 1.5, h: 1.9, y: 3.8, c: 0x1f542e },
+        { r: 0.95, h: 1.6, y: 4.9, c: 0x276739 },
+      ].forEach(t => {
+        const f = new THREE.Mesh(
+          new THREE.ConeGeometry(t.r, t.h, 7),
+          new THREE.MeshStandardMaterial({ color: t.c, roughness: 0.65, flatShading: true })
+        );
+        f.position.y = t.y;
+        f.castShadow = true;
+        tree.add(f);
+      });
+
+      tree.add(trunk);
+      tree.position.set(tx, ty, tz);
+      overworldGroup.add(tree);
+    }
+
+    // Glowing Ancient Rune Monoliths
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const rDist = 28 + (i % 3) * 10;
+      const mx = Math.cos(ang) * rDist;
+      const mz = Math.sin(ang) * rDist;
+      const my = getOverworldHeight(mx, mz);
+
+      const monolith = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 3.8, 0.7),
+        new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.45, metalness: 0.3 })
+      );
+      monolith.position.set(mx, my + 1.9, mz);
+      monolith.rotation.y = ang + 0.3;
+      monolith.castShadow = true;
+
+      const runeLight = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, 2.2, 0.75),
+        new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x00f0ff, emissiveIntensity: 1.8 })
+      );
+      monolith.add(runeLight);
+      overworldGroup.add(monolith);
+    }
+
+    // Glowing Ancient Portals with Runes
+    const portals = [
+      { id: 'portal_1', name: 'Sunken Crypt (Rank I)', x: -18, z: -20, theme: 'crypt' },
+      { id: 'portal_2', name: 'Infernal Vault (Rank II)', x: 26, z: 24, theme: 'fire' }
+    ];
+
+    portals.forEach(p => {
+      const py = getOverworldHeight(p.x, p.z);
+      const portalGroup = new THREE.Group();
+
+      const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.4, metalness: 0.3 });
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.38, 10, 24, Math.PI), stoneMat);
+      arch.position.y = 2.3;
+      arch.castShadow = true;
+      portalGroup.add(arch);
+
+      for (let m = 0; m < 4; m++) {
+        const ang = (m * Math.PI) / 2;
+        const mono = new THREE.Mesh(
+          new THREE.BoxGeometry(0.35, 0.9, 0.25),
+          new THREE.MeshStandardMaterial({ color: 0x9333ea, emissive: 0xa855f7, emissiveIntensity: 1.2 })
+        );
+        mono.position.set(Math.cos(ang) * 3.0, 1.8 + (m % 2) * 0.4, Math.sin(ang) * 3.0);
+        portalGroup.add(mono);
+      }
+
+      const vortex = new THREE.Mesh(
+        new THREE.CircleGeometry(1.95, 24),
+        new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+      );
+      vortex.position.y = 2.3;
+      portalGroup.add(vortex);
+
+      const pLight = new THREE.PointLight(0xa855f7, 3.8, 14);
+      pLight.position.y = 2.5;
+      portalGroup.add(pLight);
+
+      portalGroup.position.set(p.x, py, p.z);
+      overworldGroup.add(portalGroup);
+      p.group = portalGroup;
+      p.vortex = vortex;
+    });
+
+    scene.add(overworldGroup);
+
+    // ----------------------------------------------------
+    // 6. COMPOSITE HIGH-QUALITY 17-BONE ARMORED PALADIN
+    // ----------------------------------------------------
+    const playerGroup = new THREE.Group();
+    playerGroup.position.set(0, getOverworldHeight(0, 0), 0);
+    scene.add(playerGroup);
+    window.__horizonPlayerGroup = playerGroup;
+    window.__horizonState = state;
+    window.__horizonControlSettings = controlSettings;
+
+    const bones = {};
+
+    // ----------------------------------------------------
+    // 6. HIGH-RESOLUTION PROCEDURAL PBR TEXTURES & SKELETAL PALADIN
+    // ----------------------------------------------------
+    function createProceduralCanvas(w, h, drawFn) {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext('2d');
+      drawFn(ctx, w, h);
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.generateMipmaps = true;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      return tex;
+    }
+
+    // 1. Ornate Engraved Damascus Steel (Plate Armor)
+    const texArmorColor = createProceduralCanvas(512, 512, (ctx, w, h) => {
+      // Midnight royal blue / steel gradient base
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#172554');
+      grad.addColorStop(0.35, '#1e3a8a');
+      grad.addColorStop(0.7, '#1e293b');
+      grad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Damascus organic steel swirls
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < 36; i++) {
+        ctx.strokeStyle = `rgba(226, 232, 240, ${0.06 + Math.random() * 0.09})`;
+        ctx.beginPath();
+        const yBase = (i / 36) * h;
+        ctx.moveTo(0, yBase);
+        for (let x = 0; x <= w; x += 32) {
+          const cy = yBase + Math.sin(x * 0.035 + i * 0.8) * 16 + Math.cos(x * 0.02) * 10;
+          ctx.lineTo(x, cy);
+        }
+        ctx.stroke();
+      }
+
+      // Golden Filigree Border Inlay
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(14, 14, w - 28, h - 28);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.8;
+      ctx.strokeRect(20, 20, w - 40, h - 40);
+
+      // Corner Rosettes
+      const corners = [[26, 26], [w - 26, 26], [26, h - 26], [w - 26, h - 26]];
+      corners.forEach(([cx, cy]) => {
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+      });
+
+      // Embossed Steel Rivets
+      for (let s = 52; s < w - 30; s += 52) {
+        [[s, 16], [s, h - 16], [16, s], [w - 16, s]].forEach(([rx, ry]) => {
+          ctx.fillStyle = '#0f172a';
+          ctx.beginPath(); ctx.arc(rx + 1, ry + 1, 3.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#cbd5e1';
+          ctx.beginPath(); ctx.arc(rx, ry, 3.0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#f8fafc';
+          ctx.beginPath(); ctx.arc(rx - 0.8, ry - 0.8, 1.2, 0, Math.PI * 2); ctx.fill();
+        });
+      }
+    });
+    texArmorColor.colorSpace = THREE.SRGBColorSpace;
+
+    // Normal Map for Armor (Tangent Space Bevels & Fluting)
+    const texArmorNormal = createProceduralCanvas(512, 512, (ctx, w, h) => {
+      ctx.fillStyle = 'rgb(128, 128, 255)';
+      ctx.fillRect(0, 0, w, h);
+
+      // Beveled border slopes
+      ctx.fillStyle = 'rgb(100, 128, 255)'; ctx.fillRect(12, 12, 8, h - 24);
+      ctx.fillStyle = 'rgb(156, 128, 255)'; ctx.fillRect(w - 20, 12, 8, h - 24);
+      ctx.fillStyle = 'rgb(128, 156, 255)'; ctx.fillRect(12, 12, w - 24, 8);
+      ctx.fillStyle = 'rgb(128, 100, 255)'; ctx.fillRect(12, h - 20, w - 24, 8);
+
+      // Center Ridge Tapul Fluting
+      const mid = w / 2;
+      const rGrad = ctx.createLinearGradient(mid - 16, 0, mid + 16, 0);
+      rGrad.addColorStop(0, 'rgb(128, 128, 255)');
+      rGrad.addColorStop(0.48, 'rgb(165, 128, 255)');
+      rGrad.addColorStop(0.52, 'rgb(92, 128, 255)');
+      rGrad.addColorStop(1, 'rgb(128, 128, 255)');
+      ctx.fillStyle = rGrad;
+      ctx.fillRect(mid - 16, 24, 32, h - 48);
+    });
+
+    // 2. High-Res Woven Imperial Fabric & Cape Texture with Heraldic Crest
+    const texClothColor = createProceduralCanvas(512, 512, (ctx, w, h) => {
+      // Midnight Royal Navy with fold shading
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, '#0c1228');
+      grad.addColorStop(0.2, '#1e295a');
+      grad.addColorStop(0.5, '#28367a');
+      grad.addColorStop(0.8, '#1e295a');
+      grad.addColorStop(1, '#0c1228');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Microscopic cross-stitch textile weave
+      ctx.lineWidth = 1;
+      for (let y = 0; y < h; y += 4) {
+        ctx.strokeStyle = (y % 8 === 0) ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.16)';
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+      for (let x = 0; x < w; x += 4) {
+        ctx.strokeStyle = (x % 8 === 0) ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.14)';
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+
+      // Golden Embroidered Heraldic Crest (Winged Solar Sigil)
+      ctx.save();
+      ctx.translate(w / 2, h * 0.38);
+      ctx.fillStyle = '#fbbf24';
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 2.5;
+
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+        ctx.lineTo(Math.cos(a) * 42, Math.sin(a) * 42);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+      // Winged crest arcs
+      ctx.beginPath();
+      ctx.moveTo(-68, -10);
+      ctx.bezierCurveTo(-45, -42, -15, -28, 0, 0);
+      ctx.bezierCurveTo(15, -28, 45, -42, 68, -10);
+      ctx.bezierCurveTo(45, -15, 20, -5, 0, 24);
+      ctx.bezierCurveTo(-20, -5, -45, -15, -68, -10);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Golden Embroidered Hem & Tassel Fringe at Bottom
+      ctx.fillStyle = '#f59e0b'; ctx.fillRect(0, h - 38, w, 8);
+      ctx.fillStyle = '#fbbf24'; ctx.fillRect(0, h - 28, w, 4);
+
+      // Scalloped fringe
+      ctx.fillStyle = '#d97706';
+      for (let x = 6; x < w; x += 16) {
+        ctx.beginPath(); ctx.arc(x, h - 20, 7, 0, Math.PI); ctx.fill();
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(x, h - 20); ctx.lineTo(x, h - 2); ctx.stroke();
+      }
+    });
+    texClothColor.colorSpace = THREE.SRGBColorSpace;
+
+    // Cloth Bump Map
+    const texClothBump = createProceduralCanvas(512, 512, (ctx, w, h) => {
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y += 4) {
+        for (let x = 0; x < w; x += 4) {
+          const val = ((x + y) % 8 === 0) ? 142 : 114;
+          ctx.fillStyle = `rgb(${val},${val},${val})`;
+          ctx.fillRect(x, y, 2, 2);
+        }
+      }
+      ctx.save();
+      ctx.translate(w / 2, h * 0.38);
+      ctx.fillStyle = '#b4b4b4';
+      ctx.beginPath(); ctx.arc(0, 0, 36, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#a4a4a4';
+      ctx.fillRect(0, h - 38, w, 22);
+    });
+
+    // 3. Brushed Gold Filigree Texture
+    const texGoldColor = createProceduralCanvas(512, 512, (ctx, w, h) => {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#fef08a');
+      grad.addColorStop(0.3, '#f59e0b');
+      grad.addColorStop(0.7, '#d97706');
+      grad.addColorStop(1, '#92400e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 50; i++) {
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + Math.random() * 0.12})`;
+        const y = Math.random() * h;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y + (Math.random() - 0.5) * 6); ctx.stroke();
+      }
+    });
+    texGoldColor.colorSpace = THREE.SRGBColorSpace;
+
+    // 4. Glowing Arcane Runes & Hex Core Texture
+    const texRuneEmissive = createProceduralCanvas(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 14;
+
+      ctx.beginPath(); ctx.arc(0, 0, 102, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 78, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 48, 0, Math.PI * 2); ctx.stroke();
+
+      for (let r = 0; r < 2; r++) {
+        ctx.beginPath();
+        for (let i = 0; i < 3; i++) {
+          const a = (i * Math.PI * 2) / 3 + (r * Math.PI) / 3;
+          const x = Math.cos(a) * 72;
+          const y = Math.sin(a) * 72;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI * 2) / 8;
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.arc(Math.cos(a) * 90, Math.sin(a) * 90, 4.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      const flare = ctx.createRadialGradient(0, 0, 2, 0, 0, 38);
+      flare.addColorStop(0, '#ffffff');
+      flare.addColorStop(0.4, '#38bdf8');
+      flare.addColorStop(1, 'rgba(6, 182, 212, 0)');
+      ctx.fillStyle = flare;
+      ctx.beginPath(); ctx.arc(0, 0, 38, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+    texRuneEmissive.colorSpace = THREE.SRGBColorSpace;
+
+    // 5. Dark Bridle Leather Texture for Straps & Doublet
+    const texLeather = createProceduralCanvas(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = '#382012';
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 800; i++) {
+        const lx = Math.random() * w;
+        const ly = Math.random() * h;
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(30, 16, 8, 0.4)' : 'rgba(84, 51, 28, 0.3)';
+        ctx.fillRect(lx, ly, 2, 2);
+      }
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(6, 6, w - 12, h - 12);
+      ctx.setLineDash([]);
+    });
+    texLeather.colorSpace = THREE.SRGBColorSpace;
+
+    // PBR Materials for Armored Paladin
+    const matArmorPolished = new THREE.MeshStandardMaterial({
+      color: 0x2244aa,
+      map: texArmorColor,
+      normalMap: texArmorNormal,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      roughness: 0.24,
+      metalness: 0.88,
+    });
+    const matGoldTrim = new THREE.MeshStandardMaterial({
+      map: texGoldColor,
+      roughness: 0.16,
+      metalness: 0.96,
+    });
+    const matDarkSteel = new THREE.MeshStandardMaterial({
+      color: 0x475569,
+      map: texArmorColor,
+      normalMap: texArmorNormal,
+      normalScale: new THREE.Vector2(0.65, 0.65),
+      roughness: 0.36,
+      metalness: 0.82,
+    });
+    const matGlowingCore = new THREE.MeshStandardMaterial({
+      color: 0x06b6d4,
+      map: texRuneEmissive,
+      emissiveMap: texRuneEmissive,
+      emissive: 0x00f0ff,
+      emissiveIntensity: 2.6,
+      roughness: 0.1,
+      metalness: 0.35,
+    });
+    const matCape = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: texClothColor,
+      bumpMap: texClothBump,
+      bumpScale: 0.04,
+      roughness: 0.8,
+      metalness: 0.06,
+      side: THREE.DoubleSide,
+      shadowSide: THREE.DoubleSide,
+    });
+    const matLeatherArmor = new THREE.MeshStandardMaterial({
+      map: texLeather,
+      roughness: 0.76,
+      metalness: 0.12,
+    });
+
+    // Ambient Occlusion Ground Contact Disk
+    const aoDisk = new THREE.Mesh(
+      new THREE.CircleGeometry(0.65, 18),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 })
+    );
+    aoDisk.rotation.x = -Math.PI / 2;
+    aoDisk.position.y = 0.03;
+    playerGroup.add(aoDisk);
+
+    // ----------------------------------------------------
+    // VERLET CLOTH PHYSICS SIMULATION RIG (7x9 Particle Mesh)
+    // ----------------------------------------------------
+    const clothCols = 7;
+    const clothRows = 9;
+    const clothHeight = 0.96;
+    const capeGeo = new THREE.PlaneGeometry(0.72, clothHeight, clothCols - 1, clothRows - 1);
+    
+    const clothParticles = [];
+    const capePosAttr = capeGeo.attributes.position;
+    
+    // Flare cape width from 0.58m at shoulders to 0.78m at hem
+    for (let r = 0; r < clothRows; r++) {
+      const normY = r / (clothRows - 1);
+      const rowWidth = 0.58 + normY * 0.20;
+      for (let c = 0; c < clothCols; c++) {
+        const idx = r * clothCols + c;
+        const normX = c / (clothCols - 1) - 0.5;
+        const x = normX * rowWidth;
+        const y = 0.22 - normY * clothHeight;
+        const z = -0.19 - Math.sin(normY * Math.PI * 0.5) * 0.06;
+        capePosAttr.setXYZ(idx, x, y, z);
+        clothParticles.push({
+          pos: new THREE.Vector3(x, y, z),
+          oldPos: new THREE.Vector3(x, y, z),
+          originalPos: new THREE.Vector3(x, y, z),
+          pinned: (r === 0)
+        });
+      }
+    }
+    capePosAttr.needsUpdate = true;
+    capeGeo.computeVertexNormals();
+
+    const capeMesh = new THREE.Mesh(capeGeo, matCape);
+    capeMesh.castShadow = true;
+    capeMesh.receiveShadow = true;
+    bones.cape = capeMesh;
+
+    // Structural, Shear & Bending Cloth Constraints
+    const clothConstraints = [];
+    const stepY = clothHeight / (clothRows - 1);
+
+    // 1. Horizontal structural constraints (enforce row flare width)
+    for (let r = 0; r < clothRows; r++) {
+      const normY = r / (clothRows - 1);
+      const rowWidth = 0.58 + normY * 0.20;
+      const stepX = rowWidth / (clothCols - 1);
+      for (let c = 0; c < clothCols - 1; c++) {
+        clothConstraints.push([r * clothCols + c, r * clothCols + c + 1, stepX]);
+      }
+      // Horizontal bending constraints (prevents narrow pinching)
+      for (let c = 0; c < clothCols - 2; c++) {
+        clothConstraints.push([r * clothCols + c, r * clothCols + c + 2, stepX * 2]);
+      }
+    }
+
+    // 2. Vertical structural constraints
+    for (let r = 0; r < clothRows - 1; r++) {
+      for (let c = 0; c < clothCols; c++) {
+        clothConstraints.push([r * clothCols + c, (r + 1) * clothCols + c, stepY]);
+      }
+      // Vertical bending constraints (maintains vertical drape)
+      if (r < clothRows - 2) {
+        for (let c = 0; c < clothCols; c++) {
+          clothConstraints.push([r * clothCols + c, (r + 2) * clothCols + c, stepY * 2]);
+        }
+      }
+    }
+
+    // 3. Diagonal shear constraints
+    for (let r = 0; r < clothRows - 1; r++) {
+      const normY = r / (clothRows - 1);
+      const rowWidth = 0.58 + normY * 0.20;
+      const stepX = rowWidth / (clothCols - 1);
+      const diagLen = Math.hypot(stepX, stepY);
+      for (let c = 0; c < clothCols - 1; c++) {
+        clothConstraints.push([r * clothCols + c, (r + 1) * clothCols + c + 1, diagLen]);
+        clothConstraints.push([r * clothCols + c + 1, (r + 1) * clothCols + c, diagLen]);
+      }
+    }
+
+    function updateClothPhysics(dt, isMoving, walkCycle, currentSpeed, turnDiff) {
+      if (!capeMesh || !clothParticles.length) return;
+      const time = clock.getElapsedTime();
+
+      const speedFactor = isMoving ? Math.min(1.5, currentSpeed / 6.0) : 0;
+      const backwardForce = (speedFactor * 0.42 + 0.04) + (state.isDodging ? 0.6 : 0);
+      const flutterStrength = (isMoving ? 0.035 : 0.012);
+      const centripetalX = turnDiff * 0.35;
+      const drag = 0.92;
+      const gravY = -9.8 * 0.8 * dt * dt;
+
+      for (let i = 0; i < clothParticles.length; i++) {
+        const p = clothParticles[i];
+        if (p.pinned) {
+          p.pos.copy(p.originalPos);
+          p.oldPos.copy(p.originalPos);
+          continue;
+        }
+
+        const r = Math.floor(i / clothCols);
+        const c = i % clothCols;
+        const normRow = r / (clothRows - 1);
+
+        const rippleZ = Math.sin(time * 10 + r * 0.9 + c * 0.7) * flutterStrength * normRow;
+        const rippleX = Math.cos(time * 8 + r * 0.7) * (flutterStrength * 0.4) * normRow;
+
+        const vx = (p.pos.x - p.oldPos.x) * drag;
+        const vy = (p.pos.y - p.oldPos.y) * drag;
+        const vz = (p.pos.z - p.oldPos.z) * drag;
+
+        p.oldPos.copy(p.pos);
+
+        // Apply physical integration
+        const windAccelZ = -backwardForce * 22.0 * normRow * dt * dt;
+        p.pos.x += vx + centripetalX * normRow * dt * 4 + rippleX;
+        p.pos.y += vy + gravY;
+        p.pos.z += vz + windAccelZ + rippleZ;
+
+        // Collision push-out against paladin armor cylinder
+        const bodyRadius = 0.23 + (normRow < 0.4 ? 0.04 : 0);
+        const dist2D = Math.hypot(p.pos.x, p.pos.z);
+        if (dist2D < bodyRadius && p.pos.z > -bodyRadius) {
+          const safeZ = -Math.sqrt(Math.max(0.001, bodyRadius * bodyRadius - p.pos.x * p.pos.x)) - 0.02;
+          p.pos.z = Math.min(p.pos.z, safeZ);
+        }
+      }
+
+      // Relaxation solver (4 iterations for crisp, non-elastic drape)
+      for (let iter = 0; iter < 4; iter++) {
+        for (let cIdx = 0; cIdx < clothConstraints.length; cIdx++) {
+          const [i1, i2, restLen] = clothConstraints[cIdx];
+          const p1 = clothParticles[i1];
+          const p2 = clothParticles[i2];
+
+          const dx = p2.pos.x - p1.pos.x;
+          const dy = p2.pos.y - p1.pos.y;
+          const dz = p2.pos.z - p1.pos.z;
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist === 0) continue;
+
+          const diff = (dist - restLen) / dist;
+          const ox = dx * 0.5 * diff;
+          const oy = dy * 0.5 * diff;
+          const oz = dz * 0.5 * diff;
+
+          if (!p1.pinned && !p2.pinned) {
+            p1.pos.x += ox; p1.pos.y += oy; p1.pos.z += oz;
+            p2.pos.x -= ox; p2.pos.y -= oy; p2.pos.z -= oz;
+          } else if (!p1.pinned && p2.pinned) {
+            p1.pos.x += ox * 2; p1.pos.y += oy * 2; p1.pos.z += oz * 2;
+          } else if (p1.pinned && !p2.pinned) {
+            p2.pos.x -= ox * 2; p2.pos.y -= oy * 2; p2.pos.z -= oz * 2;
+          }
+        }
+      }
+
+      const pAttr = capeGeo.attributes.position;
+      for (let i = 0; i < clothParticles.length; i++) {
+        pAttr.setXYZ(i, clothParticles[i].pos.x, clothParticles[i].pos.y, clothParticles[i].pos.z);
+      }
+      pAttr.needsUpdate = true;
+      capeGeo.computeVertexNormals();
+      capeGeo.attributes.normal.needsUpdate = true;
+    }
+
+    // ----------------------------------------------------
+    // HIGH-FIDELITY SKELETAL PALADIN ASSEMBLY
+    // ----------------------------------------------------
+    // 1. Pelvis, Leather Gambeson & Articulated Tassets
+    bones.pelvis = new THREE.Group();
+    bones.pelvis.position.y = 0.92;
+    playerGroup.add(bones.pelvis);
+
+    const pelvisMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.25, 0.22, 10), matDarkSteel);
+    pelvisMesh.castShadow = true;
+
+    const gambesonHem = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.33, 0.16, 10), matLeatherArmor);
+    gambesonHem.position.y = -0.06;
+    bones.pelvis.add(pelvisMesh, gambesonHem);
+
+    // Articulated Hip Tassets (Left & Right hanging armor lames)
+    ['L', 'R'].forEach(side => {
+      const s = side === 'L' ? -1 : 1;
+      const tasset = new THREE.Group();
+      tasset.position.set(s * 0.22, -0.04, 0);
+
+      [0, 1, 2].forEach(l => {
+        const lame = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.04), matArmorPolished);
+        lame.position.set(0, -l * 0.08, l * 0.015);
+        lame.castShadow = true;
+        const rivet = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.05, 6), matGoldTrim);
+        rivet.rotation.x = Math.PI / 2;
+        rivet.position.set(0, -l * 0.08, l * 0.015 + 0.02);
+        tasset.add(lame, rivet);
+      });
+      tasset.rotation.z = s * -0.08;
+      bones.pelvis.add(tasset);
+      bones[`tasset_${side}`] = tasset;
+    });
+
+    // 2. Spine Lower & Upper (Gothic Cuirass & Power Core)
+    bones.spine_lower = new THREE.Group();
+    bones.pelvis.add(bones.spine_lower);
+
+    const waistMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.27, 0.18, 10), matArmorPolished);
+    const beltMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.09, 10), matLeatherArmor);
+    const buckleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.04), matGoldTrim);
+    buckleMesh.position.set(0, 0, 0.27);
+    const pouchMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.08), matLeatherArmor);
+    pouchMesh.position.set(0.22, 0, 0.12);
+    const potionMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.10, 6), matGlowingCore);
+    potionMesh.position.set(-0.22, 0, 0.12);
+    bones.spine_lower.add(waistMesh, beltMesh, buckleMesh, pouchMesh, potionMesh);
+
+    bones.spine_upper = new THREE.Group();
+    bones.spine_upper.position.y = 0.28;
+
+    // Sculpted Gothic Cuirass with Tapul Center Ridge & Gorget
+    const chestMesh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.54, 0.38), matArmorPolished);
+    chestMesh.castShadow = true;
+
+    const tapulRidge = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.48, 0.06), matGoldTrim);
+    tapulRidge.position.set(0, 0, 0.20);
+
+    const gorgetMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.25, 0.14, 10), matGoldTrim);
+    gorgetMesh.position.set(0, 0.24, 0);
+
+    // Glowing Arcane Power Core with Bezel
+    const coreBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 8), matGoldTrim);
+    coreBezel.rotation.x = Math.PI / 2;
+    coreBezel.position.set(0, 0.06, 0.19);
+
+    const coreMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.08, 8), matGlowingCore);
+    coreMesh.rotation.x = Math.PI / 2;
+    coreMesh.position.set(0, 0.06, 0.20);
+
+    const coreLight = new THREE.PointLight(0x00f0ff, 1.4, 2.5);
+    coreLight.position.set(0, 0.06, 0.28);
+    bones.coreLight = coreLight;
+
+    // Twin Winged Lion Shoulder Clasps for the Cape
+    [-1, 1].forEach(side => {
+      const clasp = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.03, 6), matGoldTrim);
+      clasp.position.set(side * 0.20, 0.25, -0.16);
+      bones.spine_upper.add(clasp);
+    });
+
+    // Back Scabbard with Sheathed Blade & Harness
+    const scabbardGroup = new THREE.Group();
+    const scabbardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.92, 0.05), matLeatherArmor);
+    const scabbardTrim = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.06), matGoldTrim);
+    scabbardTrim.position.y = 0.40;
+    const scabbardHilt = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.22, 6), matGoldTrim);
+    scabbardHilt.position.y = 0.54;
+    scabbardGroup.add(scabbardMesh, scabbardTrim, scabbardHilt);
+    scabbardGroup.position.set(-0.06, 0.08, -0.22);
+    scabbardGroup.rotation.set(0.15, 0.2, -0.6);
+    bones.scabbard = scabbardGroup;
+
+    // Attach cape mesh to upper spine
+    bones.spine_upper.add(chestMesh, tapulRidge, gorgetMesh, coreBezel, coreMesh, coreLight, scabbardGroup, capeMesh);
+    bones.spine_lower.add(bones.spine_upper);
+
+    // 3. Neck & Armet Close-Helm with Valkyrie Wings & Celestial Visor
+    bones.neck = new THREE.Group();
+    bones.neck.position.y = 0.35;
+    bones.head = new THREE.Group();
+    bones.head.position.y = 0.18;
+
+    const helmDome = new THREE.Mesh(new THREE.DodecahedronGeometry(0.25, 2), matDarkSteel);
+    helmDome.scale.set(0.96, 1.15, 1.05);
+    helmDome.castShadow = true;
+
+    const helmCheeks = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.22, 0.30), matArmorPolished);
+    helmCheeks.position.set(0, -0.06, 0.04);
+
+    const helmCrest = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.44), matGoldTrim);
+    helmCrest.position.set(0, 0.20, -0.02);
+
+    [-1, 1].forEach(side => {
+      const wing = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.38, 4), matGoldTrim);
+      wing.position.set(side * 0.23, 0.16, -0.08);
+      wing.rotation.z = side * -0.55;
+      wing.rotation.x = -0.4;
+      bones.head.add(wing);
+    });
+
+    const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.055, 0.16), matGlowingCore);
+    visorMesh.position.set(0, 0.02, 0.17);
+
+    bones.head.add(helmDome, helmCheeks, helmCrest, visorMesh);
+    bones.neck.add(bones.head);
+    bones.spine_upper.add(bones.neck);
+
+    // 4. Arms with 3-Tier Grand Pauldrons, Couters & Gauntlets
+    ['L', 'R'].forEach(side => {
+      const s = side === 'L' ? -1 : 1;
+      const shoulder = new THREE.Group();
+      shoulder.position.set(s * 0.42, 0.22, 0);
+
+      // Tier 1: Grand Pauldron Dome
+      const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.20, 10, 10, 0, Math.PI), matGoldTrim);
+      pauldron.rotation.z = s * (Math.PI / 2 + 0.3);
+      pauldron.position.set(s * 0.06, 0.06, 0);
+
+      // Tier 2 & 3: Overlapping Curved Lames
+      const lame1 = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.17, 0.08, 8, 1, true, 0, Math.PI), matArmorPolished);
+      lame1.rotation.z = s * Math.PI / 2;
+      lame1.position.set(s * 0.06, -0.02, 0);
+      
+      const pauldronGem = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), matGlowingCore);
+      pauldronGem.position.set(s * 0.20, 0.07, 0);
+      shoulder.add(pauldron, lame1, pauldronGem);
+
+      // Upper arm (Rerebrace)
+      const upperArm = new THREE.Group();
+      const uArmMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.32, 8), matArmorPolished);
+      uArmMesh.position.y = -0.16;
+      uArmMesh.castShadow = true;
+      upperArm.add(uArmMesh);
+
+      // Forearm (Vambrace + Elbow Couter)
+      const forearm = new THREE.Group();
+      forearm.position.y = -0.32;
+
+      const couterMesh = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), matGoldTrim);
+      couterMesh.position.set(0, 0, -0.04);
+
+      const fArmMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.30, 8), matDarkSteel);
+      fArmMesh.position.y = -0.15;
+      fArmMesh.castShadow = true;
+      forearm.add(couterMesh, fArmMesh);
+
+      // Segmented Hourglass Gauntlet
+      const hand = new THREE.Group();
+      hand.position.y = -0.30;
+      const handMesh = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), matGoldTrim);
+      const knuckleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.07), matArmorPolished);
+      knuckleMesh.position.set(0, -0.03, 0.04);
+      hand.add(handMesh, knuckleMesh);
+
+      forearm.add(hand);
+      upperArm.add(forearm);
+      shoulder.add(upperArm);
+      bones.spine_upper.add(shoulder);
+
+      bones[`shoulder_${side}`] = shoulder;
+      bones[`upper_arm_${side}`] = upperArm;
+      bones[`forearm_${side}`] = forearm;
+      bones[`hand_${side}`] = hand;
+    });
+
+    // 5. Left Hand Arcane Hex Aegis
+    const shieldGroup = new THREE.Group();
+    const shieldPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.36, 0.06, 6), matDarkSteel);
+    shieldPlate.rotation.x = Math.PI / 2;
+    const shieldTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.39, 0.04, 6), matGoldTrim);
+    shieldTrim.rotation.x = Math.PI / 2;
+    const shieldRune = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.07, 6), matGlowingCore);
+    shieldRune.rotation.x = Math.PI / 2;
+    const shieldCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.10), matGlowingCore);
+    shieldCrystal.position.z = 0.06;
+
+    bones.shieldRune = shieldRune;
+    shieldGroup.add(shieldPlate, shieldTrim, shieldRune, shieldCrystal);
+    shieldGroup.position.set(-0.16, 0, 0.16);
+    bones.hand_L.add(shieldGroup);
+
+    // 6. Legs (Articulated Cuisses, Winged Poleyns & Sabatons)
+    ['L', 'R'].forEach(side => {
+      const s = side === 'L' ? -1 : 1;
+      const thigh = new THREE.Group();
+      thigh.position.set(s * 0.18, -0.12, 0);
+
+      const thighMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.10, 0.44, 8), matArmorPolished);
+      thighMesh.position.y = -0.22;
+      thighMesh.castShadow = true;
+      thigh.add(thighMesh);
+
+      const shin = new THREE.Group();
+      shin.position.y = -0.44;
+
+      const kneePoleyn = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.10), matGoldTrim);
+      kneePoleyn.position.set(0, 0.02, 0.08);
+
+      const shinMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.08, 0.42, 8), matDarkSteel);
+      shinMesh.position.y = -0.21;
+      shinMesh.castShadow = true;
+      shin.add(kneePoleyn, shinMesh);
+
+      // Gothic Sabatons with Articulated Toe Lames
+      const foot = new THREE.Group();
+      foot.position.y = -0.42;
+
+      const footMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.28), matGoldTrim);
+      footMesh.position.set(0, -0.04, 0.06);
+      footMesh.castShadow = true;
+
+      const toeLame = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.07, 0.12), matArmorPolished);
+      toeLame.position.set(0, -0.04, 0.18);
+      foot.add(footMesh, toeLame);
+
+      shin.add(foot);
+      thigh.add(shin);
+      bones.pelvis.add(thigh);
+
+      bones[`thigh_${side}`] = thigh;
+      bones[`shin_${side}`] = shin;
+      bones[`foot_${side}`] = foot;
+    });
+
+    const weaponSocket = new THREE.Group();
+    bones.hand_R.add(weaponSocket);
+
+    const slashTrailGeo = new THREE.RingGeometry(1.6, 2.2, 16, 1, 0, Math.PI * 0.65);
+    const slashTrailMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide
+    });
+    const slashTrailMesh = new THREE.Mesh(slashTrailGeo, slashTrailMat);
+    slashTrailMesh.rotation.x = Math.PI / 2;
+    slashTrailMesh.position.set(0, 1.2, 0);
+    playerGroup.add(slashTrailMesh);
+
+    let activeWeaponMesh = null;
+    function updateWeaponVisual(type) {
+      if (activeWeaponMesh) weaponSocket.remove(activeWeaponMesh);
+      const grp = new THREE.Group();
+      if (type.includes('sword') || type === 'dagger') {
+        const bladeLen = type === 'greatsword' ? 1.95 : type === 'dagger' ? 0.75 : 1.45;
+        const blade = new THREE.Mesh(
+          new THREE.BoxGeometry(0.12, bladeLen, 0.035),
+          matArmorPolished
+        );
+        blade.position.y = bladeLen / 2;
+        blade.castShadow = true;
+
+        const runeGlow = new THREE.Mesh(
+          new THREE.BoxGeometry(0.025, bladeLen * 0.75, 0.042),
+          matGlowingCore
+        );
+        runeGlow.position.y = bladeLen / 2;
+
+        const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.09), matGoldTrim);
+        const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.36, 6), matDarkSteel);
+        grip.position.y = -0.18;
+        const pommel = new THREE.Mesh(new THREE.OctahedronGeometry(0.06), matGlowingCore);
+        pommel.position.y = -0.38;
+        grp.add(blade, runeGlow, hilt, grip, pommel);
+      } else if (type === 'bow') {
+        const bowCurve = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.04, 8, 18, Math.PI), matGoldTrim);
+        bowCurve.rotation.z = Math.PI / 2;
+        const bowGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.22, 6), matLeatherArmor);
+        grp.add(bowCurve, bowGrip);
+      } else if (type === 'staff') {
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 8), matDarkSteel);
+        shaft.position.y = 0.55;
+        const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.24), matGlowingCore);
+        orb.position.y = 1.65;
+        const crown = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.03, 6, 12), matGoldTrim);
+        crown.position.y = 1.65;
+        crown.rotation.x = Math.PI / 2;
+        grp.add(shaft, orb, crown);
+      } else {
+        const gun = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.19, 0.50), matDarkSteel);
+        gun.position.z = 0.18;
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8), matArmorPolished);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.z = 0.40;
+        grp.add(gun, barrel);
+      }
+      grp.rotation.x = -Math.PI / 2;
+      activeWeaponMesh = grp;
+      weaponSocket.add(activeWeaponMesh);
+    }
+    updateWeaponVisual('sword');
+
+    // ----------------------------------------------------
+    // 7. DUNGEON GENERATOR & BOSS
+    // ----------------------------------------------------
+    const dungeonGroup = new THREE.Group();
+    dungeonGroup.visible = false;
+    scene.add(dungeonGroup);
+
+    let currentDungeon = null;
+    let dungeonEnemies = [];
+
+    function generateDungeon(theme = 'crypt') {
+      dungeonGroup.clear();
+      dungeonEnemies = [];
+
+      const roomCount = 9;
+      const rooms = [];
+      const TS = CONFIG.dungeon.tileSize;
+
+      rooms.push({ x: 0, z: 0, w: 3, h: 3, type: 'entrance' });
+
+      let curX = 0, curZ = 0;
+      for (let i = 1; i < roomCount; i++) {
+        const dir = Math.random() < 0.5 ? { x: 1, z: 0 } : { x: 0, z: 1 };
+        curX += dir.x * 4;
+        curZ += dir.z * 4;
+        const type = i === roomCount - 1 ? 'boss' : (i % 3 === 0 ? 'treasure' : 'combat');
+        rooms.push({ x: curX, z: curZ, w: type === 'boss' ? 5 : 3, h: type === 'boss' ? 5 : 3, type });
+      }
+
+      const wallMat = new THREE.MeshStandardMaterial({
+        color: theme === 'fire' ? 0x451a03 : 0x334155,
+        roughness: 0.7,
+        metalness: 0.2,
+        flatShading: true
+      });
+      const floorMat = new THREE.MeshStandardMaterial({
+        color: theme === 'fire' ? 0x27272a : 0x1e293b,
+        roughness: 0.8
+      });
+
+      const floorGeo = new THREE.BoxGeometry(TS, 0.4, TS);
+
+      rooms.forEach((r) => {
+        for (let ix = -r.w; ix <= r.w; ix++) {
+          for (let iz = -r.h; iz <= r.h; iz++) {
+            const fl = new THREE.Mesh(floorGeo, floorMat);
+            fl.position.set((r.x + ix) * TS, -0.2, (r.z + iz) * TS);
+            fl.receiveShadow = true;
+            dungeonGroup.add(fl);
+          }
+        }
+
+        for (let px = -r.w; px <= r.w; px += r.w * 2) {
+          const pil = new THREE.Mesh(new THREE.BoxGeometry(0.8, CONFIG.dungeon.wallHeight, 0.8), wallMat);
+          pil.position.set((r.x + px) * TS, CONFIG.dungeon.wallHeight / 2, r.z * TS);
+          pil.castShadow = true;
+          dungeonGroup.add(pil);
+        }
+
+        const torchLight = new THREE.PointLight(theme === 'fire' ? 0xff6600 : 0x38bdf8, 2.5, 18);
+        torchLight.position.set(r.x * TS, 2.8, r.z * TS);
+        dungeonGroup.add(torchLight);
+
+        if (r.type === 'combat') {
+          for (let e = 0; e < 2; e++) {
+            const eType = Math.random() < 0.6 ? 'grunt' : 'ranged';
+            spawnEnemy(eType, (r.x + (e - 0.5) * 2) * TS, (r.z + (Math.random() - 0.5) * 2) * TS);
+          }
+        } else if (r.type === 'boss') {
+          spawnBoss(r.x * TS, r.z * TS);
+        } else if (r.type === 'treasure') {
+          const chest = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.0), matGoldTrim);
+          chest.position.set(r.x * TS, 0.45, r.z * TS);
+          dungeonGroup.add(chest);
+        }
+      });
+
+      const bossRoom = rooms[rooms.length - 1];
+      const exitPortal = new THREE.Mesh(new THREE.TorusGeometry(2, 0.35, 8, 20), new THREE.MeshBasicMaterial({ color: 0x10b981 }));
+      exitPortal.position.set(bossRoom.x * TS, 2, (bossRoom.z + 4) * TS);
+      dungeonGroup.add(exitPortal);
+
+      currentDungeon = { rooms, bossRoom };
+    }
+
+    function spawnEnemy(type, x, z) {
+      const grp = new THREE.Group();
+      const col = type === 'grunt' ? 0xef4444 : 0xa855f7;
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, 1.5, 7),
+        new THREE.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.6 })
+      );
+      body.position.y = 0.75;
+      body.castShadow = true;
+      grp.add(body);
+      grp.position.set(x, 0, z);
+
+      const enemy = {
+        mesh: grp,
+        type,
+        hp: type === 'grunt' ? 55 : 40,
+        maxHp: type === 'grunt' ? 55 : 40,
+        speed: type === 'grunt' ? 3.8 : 2.8,
+        isBoss: false
+      };
+      dungeonGroup.add(grp);
+      dungeonEnemies.push(enemy);
+    }
+
+    let activeBoss = null;
+    function spawnBoss(x, z) {
+      const grp = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(2.8, 4.2, 2.0),
+        new THREE.MeshStandardMaterial({ color: 0x450a0a, roughness: 0.3, metalness: 0.85 })
+      );
+      body.position.y = 2.1;
+      body.castShadow = true;
+
+      const head = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1.0),
+        new THREE.MeshStandardMaterial({ color: 0x881337, emissive: 0xe11d48, emissiveIntensity: 0.6 })
+      );
+      head.position.y = 4.6;
+
+      const cleaver1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.2, 0.7), matGoldTrim);
+      cleaver1.position.set(-1.8, 2.2, 0.4);
+      const cleaver2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.2, 0.7), matGoldTrim);
+      cleaver2.position.set(1.8, 2.2, 0.4);
+
+      grp.add(body, head, cleaver1, cleaver2);
+      grp.position.set(x, 0, z);
+
+      activeBoss = {
+        mesh: grp,
+        type: 'colossus',
+        hp: 400,
+        maxHp: 400,
+        speed: 2.4,
+        isBoss: true
+      };
+      dungeonGroup.add(grp);
+      dungeonEnemies.push(activeBoss);
+
+      document.getElementById('boss-container').style.display = 'block';
+      updateBossHp();
+    }
+
+    function updateBossHp() {
+      if (!activeBoss) {
+        document.getElementById('boss-container').style.display = 'none';
+        return;
+      }
+      const pct = Math.max(0, (activeBoss.hp / activeBoss.maxHp) * 100);
+      document.getElementById('boss-hp').style.width = pct + '%';
+    }
+
+    // ----------------------------------------------------
+    // 8. COMBAT, PROJECTILES & HITBOXES
+    // ----------------------------------------------------
+    const projectiles = [];
+
+    function spawnFloatingNumber(text, worldPos, color='#ffffff') {
+      const el = document.createElement('div');
+      el.className = 'dmg-num';
+      el.style.color = color;
+      el.innerText = text;
+      document.body.appendChild(el);
+
+      const updatePos = () => {
+        const v = worldPos.clone().project(camera);
+        const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+      };
+      updatePos();
+
+      let t = 0;
+      const anim = () => {
+        t += 0.04;
+        worldPos.y += 0.04;
+        updatePos();
+        el.style.opacity = (1 - t).toString();
+        if (t < 1) requestAnimationFrame(anim);
+        else el.remove();
+      };
+      requestAnimationFrame(anim);
+    }
+
+    function performMeleeAttack(wep) {
+      sound.swing();
+      swingProgress = 0.01;
+
+      setTimeout(() => {
+        const fwd = new THREE.Vector3(-Math.sin(playerGroup.rotation.y), 0, -Math.cos(playerGroup.rotation.y));
+        const targets = state.inDungeon ? dungeonEnemies : [];
+
+        targets.forEach(tgt => {
+          if (tgt.hp <= 0) return;
+          const toTarget = tgt.mesh.position.clone().sub(playerGroup.position);
+          const dist = toTarget.length();
+          if (dist <= wep.reach) {
+            toTarget.normalize();
+            const dot = fwd.dot(toTarget);
+            if (dot >= Math.cos(wep.arc / 2)) {
+              let dmg = wep.dmg;
+              if (state.talents.warrior > 0) dmg += state.talents.warrior * 6;
+              tgt.hp -= dmg;
+              sound.hit();
+              spawnFloatingNumber(`-${dmg}`, tgt.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)), '#f87171');
+
+              state.comboCount++;
+              state.comboTimer = 2.5;
+              updateComboUI();
+
+              if (tgt.isBoss) updateBossHp();
+              if (tgt.hp <= 0) handleEnemyDeath(tgt);
+            }
+          }
+        });
+      }, 90);
+    }
+
+    function fireProjectile(type, speed, colorHex, dmg, aoe=0) {
+      const pos = playerGroup.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const dir = new THREE.Vector3(-Math.sin(playerGroup.rotation.y), 0, -Math.cos(playerGroup.rotation.y));
+
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), new THREE.MeshBasicMaterial({ color: colorHex }));
+      mesh.position.copy(pos);
+      scene.add(mesh);
+
+      projectiles.push({ mesh, dir, speed, life: 2.5, dmg, aoe, colorHex });
+    }
+
+    function castPower(powKey) {
+      const pow = POWERS[powKey];
+      if (!pow) return;
+      if (state.mp < pow.cost) {
+        sound.playTone(120, 0.15, 'sawtooth');
+        return;
+      }
+      state.mp -= pow.cost;
+      updateStatsUI();
+
+      if (powKey === 'fire') {
+        sound.castFire();
+        fireProjectile('fireball', 26, 0xff4400, pow.dmg, pow.aoe);
+      } else if (powKey === 'ice') {
+        sound.castIce();
+        fireProjectile('ice_shard', 34, 0x00f0ff, pow.dmg, 0);
+      } else if (powKey === 'lightning') {
+        sound.castLightning();
+        const targets = state.inDungeon ? dungeonEnemies : [];
+        if (targets.length > 0) {
+          const nearest = targets[0];
+          nearest.hp -= pow.dmg;
+          spawnFloatingNumber(`-${pow.dmg} ⚡`, nearest.mesh.position.clone().add(new THREE.Vector3(0, 2, 0)), '#facc15');
+          if (nearest.isBoss) updateBossHp();
+          if (nearest.hp <= 0) handleEnemyDeath(nearest);
+        }
+      } else if (powKey === 'telekinesis') {
+        sound.playTone(180, 0.3, 'triangle');
+        const targets = state.inDungeon ? dungeonEnemies : [];
+        targets.forEach(t => {
+          const d = t.mesh.position.distanceTo(playerGroup.position);
+          if (d < 8) {
+            const pushDir = t.mesh.position.clone().sub(playerGroup.position).normalize();
+            t.mesh.position.addScaledVector(pushDir, 4.5);
+            t.hp -= pow.dmg;
+            spawnFloatingNumber(`PUSH`, t.mesh.position, '#c084fc');
+            if (t.hp <= 0) handleEnemyDeath(t);
+          }
+        });
+      } else if (powKey === 'flight') {
+        state.isFlight = !state.isFlight;
+        document.getElementById('btn-flight-toggle').innerText = `Flight: ${state.isFlight ? 'ON' : 'OFF'} (F)`;
+      }
+    }
+
+    function handleEnemyDeath(enemy) {
+      if (enemy.mesh.parent) enemy.mesh.parent.remove(enemy.mesh);
+      dungeonEnemies = dungeonEnemies.filter(e => e !== enemy);
+
+      const xpGained = enemy.isBoss ? 300 : 30;
+      const goldGained = enemy.isBoss ? 200 : 20;
+      state.gold += goldGained;
+      state.xp += xpGained;
+      sound.playTone(560, 0.2, 'sine');
+      spawnFloatingNumber(`+${goldGained} Gold!`, enemy.mesh.position.clone().add(new THREE.Vector3(0,1,0)), '#fde047');
+
+      if (state.xp >= state.xpNeeded) {
+        state.level++;
+        state.xp -= state.xpNeeded;
+        state.xpNeeded = Math.floor(state.xpNeeded * 1.5);
+        state.talentPoints++;
+        sound.levelUp();
+        spawnFloatingNumber(`LEVEL UP! (L)`, playerGroup.position.clone().add(new THREE.Vector3(0,2.5,0)), '#38bdf8');
+      }
+
+      if (enemy.isBoss) {
+        activeBoss = null;
+        updateBossHp();
+        sound.roar();
+        spawnFloatingNumber(`DUNGEON CLEARED!`, playerGroup.position.clone().add(new THREE.Vector3(0,3,0)), '#10b981');
+      }
+      updateStatsUI();
+    }
+
+    // ----------------------------------------------------
+    // 9. RADIAL MENU & SWITCHING SYSTEM
+    // ----------------------------------------------------
+    const radialWheel = document.getElementById('radial-wheel');
+    const radialMenu = document.getElementById('radial-menu');
+    const radialItems = [
+      { id: 'sword', label: 'Sword', icon: '⚔️' },
+      { id: 'greatsword', label: 'Greatsword', icon: '🗡️' },
+      { id: 'bow', label: 'Bow', icon: '🏹' },
+      { id: 'staff', label: 'Staff', icon: '🪄' },
+      { id: 'fire', label: 'Fire', icon: '🔥' },
+      { id: 'ice', label: 'Ice', icon: '❄️' },
+      { id: 'lightning', label: 'Lightning', icon: '⚡' },
+      { id: 'telekinesis', label: 'Kinetic', icon: '🔮' }
+    ];
+
+    radialItems.forEach((item, idx) => {
+      const angle = (idx / radialItems.length) * Math.PI * 2 - Math.PI / 2;
+      const r = 100;
+      const x = 140 + Math.cos(angle) * r;
+      const y = 140 + Math.sin(angle) * r;
+
+      const div = document.createElement('div');
+      div.className = 'radial-item';
+      div.style.left = `${x}px`;
+      div.style.top = `${y}px`;
+      div.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+      div.onmouseenter = () => div.classList.add('hovered');
+      div.onmouseleave = () => div.classList.remove('hovered');
+      div.onclick = () => selectRadialItem(item.id);
+      radialWheel.appendChild(div);
+    });
+
+    function openRadialMenu() {
+      state.timeScale = 0.3;
+      radialMenu.style.display = 'flex';
+    }
+
+    function closeRadialMenu() {
+      state.timeScale = 1.0;
+      radialMenu.style.display = 'none';
+    }
+
+    function selectRadialItem(id) {
+      if (WEAPONS[id]) {
+        state.equippedWeapon = id;
+        updateWeaponVisual(id);
+        document.getElementById('label-active-weapon').innerText = WEAPONS[id].name;
+      } else if (POWERS[id]) {
+        state.equippedPower = id;
+        document.getElementById('label-active-power').innerText = POWERS[id].name;
+      }
+      closeRadialMenu();
+      renderHotbar();
+    }
+
+    // ----------------------------------------------------
+    // 10. PRO BUILDER & TALENT ASCENSION
+    // ----------------------------------------------------
+    const builderModal = document.getElementById('modal-builder');
+    const builderSubPanel = document.getElementById('builder-sub-panel');
+    const talentsModal = document.getElementById('modal-talents');
+    const talentBranches = document.getElementById('talent-branches');
+
+    function openBuilder() {
+      state.isBuilderOpen = true;
+      builderModal.style.display = 'flex';
+      renderBuilderSubPanel();
+    }
+
+    function closeBuilder() {
+      state.isBuilderOpen = false;
+      builderModal.style.display = 'none';
+    }
+
+    function renderBuilderSubPanel() {
+      builderSubPanel.innerHTML = `
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <button onclick="window.setBlueprint('shelter')">Shelter (8W, 4S)</button>
+          <button onclick="window.setBlueprint('tower')">Tower (12W, 6S)</button>
+          <button onclick="window.setBlueprint('wall')">Palisade Wall (4W)</button>
+        </div>
+        <p style="font-size: 11px; color: #94a3b8;">Click terrain to place structures. Hold Shift for free precision placement.</p>
+      `;
+    }
+
+    window.setBlueprint = (bp) => {
+      state.selectedBlueprint = bp;
+      closeBuilder();
+      spawnFloatingNumber(`Blueprint: ${bp}`, playerGroup.position, '#10b981');
+    };
+
+    const TALENT_DEFS = {
+      warrior: { name: 'Warrior', desc: '+6 Melee Damage & Parry' },
+      mage: { name: 'Mage', desc: '+15% Spell Power & Mana Regen' },
+      ranger: { name: 'Ranger', desc: '+10% Move Speed & Bow Range' }
+    };
+
+    function renderTalentTree() {
+      talentBranches.innerHTML = '';
+      Object.keys(TALENT_DEFS).forEach(k => {
+        const t = TALENT_DEFS[k];
+        const card = document.createElement('div');
+        card.style.cssText = 'background: #1e293b; padding: 12px; border-radius: 10px; border: 1px solid #334155;';
+        card.innerHTML = `
+          <h4 style="color: #38bdf8; font-size: 13px;">${t.name}</h4>
+          <p style="font-size: 10px; color: #cbd5e1; margin: 4px 0;">${t.desc}</p>
+          <div style="font-size: 11px; font-weight: bold; margin: 6px 0;">Rank: ${state.talents[k]}/5</div>
+          <button onclick="window.upgradeTalent('${k}')" ${state.talentPoints <= 0 ? 'disabled' : ''}>Ascend</button>
+        `;
+        talentBranches.appendChild(card);
+      });
+      document.getElementById('tree-level').innerText = state.level;
+      document.getElementById('tree-xp').innerText = state.xp;
+      document.getElementById('tree-points').innerText = state.talentPoints;
+    }
+
+    window.upgradeTalent = (branch) => {
+      if (state.talentPoints > 0 && state.talents[branch] < 5) {
+        state.talents[branch]++;
+        state.talentPoints--;
+        sound.playTone(600, 0.2, 'sine');
+        renderTalentTree();
+      }
+    };
+
+    // ----------------------------------------------------
+    // 11. PRO CONTROLS SETTINGS MANAGER & LAYOUT ADAPTER
+    // ----------------------------------------------------
+    const settingsModal = document.getElementById('modal-settings');
+    const vjoyContainer = document.getElementById('vjoy-container');
+    const dpadCluster = document.getElementById('dpad-cluster');
+    const actionCluster = document.querySelector('.action-cluster');
+    const mainHud = document.getElementById('main-hud');
+
+    function openSettingsModal() {
+      syncSettingsUI();
+      settingsModal.style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+      settingsModal.style.display = 'none';
+      saveControlSettings();
+    }
+
+    function syncSettingsUI() {
+      // Scheme cards active state
+      ['hybrid', 'floating', 'joystick', 'dpad', 'tap_to_move'].forEach(s => {
+        const card = document.getElementById(s === 'tap_to_move' ? 'card-scheme-tap' : `card-scheme-${s}`);
+        if (card) {
+          if (controlSettings.scheme === s) card.classList.add('active');
+          else card.classList.remove('active');
+        }
+      });
+
+      // Sensitivity & Deadzone
+      const sliderSens = document.getElementById('slider-sens');
+      if (sliderSens) {
+        sliderSens.value = controlSettings.cameraSensitivity;
+        document.getElementById('label-sens').innerText = `${controlSettings.cameraSensitivity.toFixed(1)}x`;
+      }
+      const sliderDeadzone = document.getElementById('slider-deadzone');
+      if (sliderDeadzone) {
+        sliderDeadzone.value = controlSettings.deadzone;
+        document.getElementById('label-deadzone').innerText = `${controlSettings.deadzone}px`;
+      }
+
+      // Camera distance preset buttons
+      ['close', 'standard', 'tactical'].forEach(d => {
+        const btn = document.getElementById(`btn-cam-${d}`);
+        if (btn) {
+          if (controlSettings.camDistancePreset === d) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      });
+
+      // Checkboxes
+      const cInvert = document.getElementById('check-invert-y');
+      if (cInvert) cInvert.checked = controlSettings.invertY;
+      const cSprint = document.getElementById('check-auto-sprint');
+      if (cSprint) cSprint.checked = controlSettings.autoSprint;
+      const cLeft = document.getElementById('check-left-handed');
+      if (cLeft) cLeft.checked = controlSettings.handedness === 'left_handed';
+      const cMinimal = document.getElementById('check-minimal-hud');
+      if (cMinimal) cMinimal.checked = controlSettings.hudStyle === 'pro_minimal';
+    }
+
+    function applyControlLayout() {
+      // 1. Handedness (Left-handed vs Right-handed)
+      if (controlSettings.handedness === 'left_handed') {
+        vjoyContainer.style.left = 'auto';
+        vjoyContainer.style.right = '20px';
+        dpadCluster.style.left = 'auto';
+        dpadCluster.style.right = '130px';
+        actionCluster.style.right = 'auto';
+        actionCluster.style.left = '20px';
+        actionCluster.style.alignItems = 'flex-start';
+      } else {
+        vjoyContainer.style.right = 'auto';
+        vjoyContainer.style.left = '20px';
+        dpadCluster.style.right = 'auto';
+        dpadCluster.style.left = '130px';
+        actionCluster.style.left = 'auto';
+        actionCluster.style.right = '20px';
+        actionCluster.style.alignItems = 'flex-end';
+      }
+
+      // 2. Control Scheme visibility
+      if (controlSettings.scheme === 'hybrid') {
+        vjoyContainer.style.display = 'block';
+        dpadCluster.style.display = 'flex';
+      } else if (controlSettings.scheme === 'joystick') {
+        vjoyContainer.style.display = 'block';
+        dpadCluster.style.display = 'none';
+      } else if (controlSettings.scheme === 'floating') {
+        vjoyContainer.style.display = 'none'; // Hidden until touched
+        dpadCluster.style.display = 'none';
+      } else if (controlSettings.scheme === 'dpad') {
+        vjoyContainer.style.display = 'none';
+        dpadCluster.style.display = 'flex';
+        // Center the dpad in the corner
+        if (controlSettings.handedness === 'left_handed') {
+          dpadCluster.style.right = '30px';
+        } else {
+          dpadCluster.style.left = '30px';
+        }
+      } else if (controlSettings.scheme === 'tap_to_move') {
+        vjoyContainer.style.display = 'none';
+        dpadCluster.style.display = 'none';
+      }
+
+      // 3. Camera distance preset
+      if (controlSettings.camDistancePreset === 'close') state.cameraDistance = 3.8;
+      else if (controlSettings.camDistancePreset === 'tactical') state.cameraDistance = 9.2;
+      else state.cameraDistance = 5.6;
+
+      // 4. HUD style
+      if (controlSettings.hudStyle === 'pro_minimal') {
+        mainHud.classList.add('pro-minimal');
+      } else {
+        mainHud.classList.remove('pro-minimal');
+      }
+    }
+
+    function saveControlSettings() {
+      localStorage.setItem('horizon_scheme', controlSettings.scheme);
+      localStorage.setItem('horizon_handedness', controlSettings.handedness);
+      localStorage.setItem('horizon_cam_sens', controlSettings.cameraSensitivity.toString());
+      localStorage.setItem('horizon_deadzone', controlSettings.deadzone.toString());
+      localStorage.setItem('horizon_invert_y', controlSettings.invertY.toString());
+      localStorage.setItem('horizon_auto_sprint', controlSettings.autoSprint.toString());
+      localStorage.setItem('horizon_cam_preset', controlSettings.camDistancePreset);
+      localStorage.setItem('horizon_hud_style', controlSettings.hudStyle);
+      applyControlLayout();
+    }
+
+    window.selectControlScheme = (scheme) => {
+      controlSettings.scheme = scheme;
+      syncSettingsUI();
+      applyControlLayout();
+      sound.playTone(520, 0.1, 'sine');
+    };
+
+    window.setCamDistancePreset = (preset) => {
+      controlSettings.camDistancePreset = preset;
+      syncSettingsUI();
+      applyControlLayout();
+    };
+
+    window.applySettingsPreset = (presetKey) => {
+      if (presetKey === 'mobile_pro') {
+        controlSettings.scheme = 'floating';
+        controlSettings.cameraSensitivity = 1.3;
+        controlSettings.deadzone = 3;
+        controlSettings.autoSprint = true;
+        controlSettings.camDistancePreset = 'standard';
+        controlSettings.hudStyle = 'pro_minimal';
+        controlSettings.handedness = 'right_handed';
+      } else if (presetKey === 'hybrid_tactile') {
+        controlSettings.scheme = 'hybrid';
+        controlSettings.cameraSensitivity = 1.0;
+        controlSettings.deadzone = 4;
+        controlSettings.autoSprint = false;
+        controlSettings.camDistancePreset = 'standard';
+        controlSettings.hudStyle = 'normal';
+        controlSettings.handedness = 'right_handed';
+      } else if (presetKey === 'tap_arpg') {
+        controlSettings.scheme = 'tap_to_move';
+        controlSettings.cameraSensitivity = 0.9;
+        controlSettings.deadzone = 4;
+        controlSettings.autoSprint = false;
+        controlSettings.camDistancePreset = 'tactical';
+        controlSettings.hudStyle = 'normal';
+      } else if (presetKey === 'desktop_veteran') {
+        controlSettings.scheme = 'hybrid';
+        controlSettings.cameraSensitivity = 1.2;
+        controlSettings.deadzone = 2;
+        controlSettings.autoSprint = false;
+        controlSettings.camDistancePreset = 'standard';
+        controlSettings.hudStyle = 'normal';
+        controlSettings.handedness = 'right_handed';
+      } else if (presetKey === 'left_handed') {
+        controlSettings.handedness = 'left_handed';
+        controlSettings.scheme = 'hybrid';
+      }
+      syncSettingsUI();
+      applyControlLayout();
+      sound.playTone(660, 0.15, 'triangle');
+    };
+
+    window.resetControlDefaults = () => {
+      controlSettings.scheme = 'hybrid';
+      controlSettings.handedness = 'right_handed';
+      controlSettings.cameraSensitivity = 1.0;
+      controlSettings.deadzone = 4;
+      controlSettings.invertY = false;
+      controlSettings.autoSprint = false;
+      controlSettings.camDistancePreset = 'standard';
+      controlSettings.hudStyle = 'normal';
+      syncSettingsUI();
+      applyControlLayout();
+      sound.playTone(400, 0.2, 'sawtooth');
+    };
+
+    // Sliders & Checkbox Listeners
+    document.getElementById('slider-sens').oninput = (e) => {
+      controlSettings.cameraSensitivity = parseFloat(e.target.value);
+      document.getElementById('label-sens').innerText = `${controlSettings.cameraSensitivity.toFixed(1)}x`;
+    };
+    document.getElementById('slider-deadzone').oninput = (e) => {
+      controlSettings.deadzone = parseInt(e.target.value, 10);
+      document.getElementById('label-deadzone').innerText = `${controlSettings.deadzone}px`;
+    };
+    document.getElementById('check-invert-y').onchange = (e) => {
+      controlSettings.invertY = e.target.checked;
+    };
+    document.getElementById('check-auto-sprint').onchange = (e) => {
+      controlSettings.autoSprint = e.target.checked;
+    };
+    document.getElementById('check-left-handed').onchange = (e) => {
+      controlSettings.handedness = e.target.checked ? 'left_handed' : 'right_handed';
+      applyControlLayout();
+    };
+    document.getElementById('check-minimal-hud').onchange = (e) => {
+      controlSettings.hudStyle = e.target.checked ? 'pro_minimal' : 'normal';
+      applyControlLayout();
+    };
+    document.getElementById('btn-save-settings').onclick = () => closeSettingsModal();
+    document.getElementById('btn-close-settings').onclick = () => closeSettingsModal();
+    document.getElementById('btn-settings-toggle').onclick = () => openSettingsModal();
+
+    // ----------------------------------------------------
+    // 12. ROBUST INPUT ENGINE (KEYBOARD + ANALOG JOYSTICK + DPAD)
+    // ----------------------------------------------------
+    const keys = {};
+
+    function handleKey(e, isDown) {
+      const code = e.code || '';
+      const key = (e.key || '').toLowerCase();
+
+      keys[code] = isDown;
+      keys[key] = isDown;
+
+      if (key === 'w' || code === 'KeyW' || code === 'ArrowUp' || key === 'arrowup') keys['forward'] = isDown;
+      if (key === 's' || code === 'KeyS' || code === 'ArrowDown' || key === 'arrowdown') keys['backward'] = isDown;
+      if (key === 'a' || code === 'KeyA' || code === 'ArrowLeft' || key === 'arrowleft') keys['left'] = isDown;
+      if (key === 'd' || code === 'KeyD' || code === 'ArrowRight' || key === 'arrowright') keys['right'] = isDown;
+      if (code === 'ShiftLeft' || code === 'ShiftRight' || key === 'shift') keys['shift'] = isDown;
+
+      // Direct key cancels click-to-move navigation
+      if (isDown && (keys['forward'] || keys['backward'] || keys['left'] || keys['right'])) {
+        state.navTarget = null;
+        targetRingMesh.visible = false;
+      }
+    }
+
+    window.addEventListener('keydown', e => {
+      handleKey(e, true);
+      if (e.code === 'KeyP') {
+        settingsModal.style.display = settingsModal.style.display === 'flex' ? 'none' : 'flex';
+        syncSettingsUI();
+      }
+      if (e.code === 'Escape') {
+        if (settingsModal.style.display === 'flex') closeSettingsModal();
+        else if (builderModal.style.display === 'flex') closeBuilder();
+        else if (talentsModal.style.display === 'flex') talentsModal.style.display = 'none';
+        else openSettingsModal();
+      }
+      if (e.code === 'KeyQ') openRadialMenu();
+      if (e.code === 'KeyL') {
+        renderTalentTree();
+        talentsModal.style.display = talentsModal.style.display === 'flex' ? 'none' : 'flex';
+      }
+      if (e.code === 'KeyB') {
+        builderModal.style.display = builderModal.style.display === 'flex' ? 'none' : 'flex';
+        renderBuilderSubPanel();
+      }
+      if (e.code === 'KeyF') castPower('flight');
+      if (e.code === 'KeyE') handleInteraction();
+      if (e.code === 'Space' && !state.isFlight) triggerDodgeRoll();
+      if (e.code.startsWith('Digit')) {
+        const idx = parseInt(e.code.replace('Digit','')) - 1;
+        if (state.hotbar[idx]) selectRadialItem(state.hotbar[idx]);
+      }
+    });
+
+    window.addEventListener('keyup', e => {
+      handleKey(e, false);
+      if (e.code === 'KeyQ') closeRadialMenu();
+    });
+
+    // Parent Window postMessage Receiver
+    window.addEventListener('message', e => {
+      if (e.data && e.data.type === 'HORIZON3_KEY_EVENT') {
+        const isDown = e.data.eventType === 'keydown';
+        handleKey({ code: e.data.code, key: e.data.key }, isDown);
+        if (isDown) {
+          if (e.data.code === 'KeyP') {
+            settingsModal.style.display = settingsModal.style.display === 'flex' ? 'none' : 'flex';
+            syncSettingsUI();
+          }
+          if (e.data.code === 'Escape') {
+            if (settingsModal.style.display === 'flex') closeSettingsModal();
+            else openSettingsModal();
+          }
+          if (e.data.code === 'KeyQ') openRadialMenu();
+          if (e.data.code === 'KeyL') {
+            renderTalentTree();
+            talentsModal.style.display = talentsModal.style.display === 'flex' ? 'none' : 'flex';
+          }
+          if (e.data.code === 'KeyB') {
+            builderModal.style.display = builderModal.style.display === 'flex' ? 'none' : 'flex';
+            renderBuilderSubPanel();
+          }
+          if (e.data.code === 'KeyF') castPower('flight');
+          if (e.data.code === 'KeyE') handleInteraction();
+          if (e.data.code === 'Space' && !state.isFlight) triggerDodgeRoll();
+          if (e.data.code && e.data.code.startsWith('Digit')) {
+            const idx = parseInt(e.data.code.replace('Digit','')) - 1;
+            if (state.hotbar[idx]) selectRadialItem(state.hotbar[idx]);
+          }
+        } else {
+          if (e.data.code === 'KeyQ') closeRadialMenu();
+        }
+      }
+    });
+
+    // 360-Degree Analog Virtual Joystick
+    const joystickVector = { x: 0, y: 0 };
+    let vjoyPointerId = null;
+    const vjoyBase = document.getElementById('vjoy-base');
+    const vjoyKnob = document.getElementById('vjoy-knob');
+    const maxJoyRadius = 42;
+
+    function handleJoystickStart(e) {
+      window.focus();
+      state.navTarget = null;
+      targetRingMesh.visible = false;
+      if (vjoyPointerId !== null) return;
+      vjoyPointerId = e.pointerId ?? 'touch';
+
+      // Floating Joystick: center base directly under user thumb
+      if (controlSettings.scheme === 'floating') {
+        vjoyContainer.style.display = 'block';
+        vjoyContainer.style.left = `${e.clientX - 50}px`;
+        vjoyContainer.style.top = `${e.clientY - 50}px`;
+        vjoyContainer.style.bottom = 'auto';
+        vjoyContainer.style.right = 'auto';
+      }
+
+      try { vjoyBase.setPointerCapture(e.pointerId); } catch(err) {}
+      updateJoystickPosition(e.clientX, e.clientY);
+    }
+
+    function updateJoystickPosition(clientX, clientY) {
+      if (!vjoyBase) return;
+      const rect = vjoyBase.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const dist = Math.hypot(dx, dy);
+
+      let clampedX = dx;
+      let clampedY = dy;
+      if (dist > maxJoyRadius) {
+        clampedX = (dx / dist) * maxJoyRadius;
+        clampedY = (dy / dist) * maxJoyRadius;
+      }
+
+      vjoyKnob.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
+
+      // Dynamic deadzone from settings
+      if (dist < controlSettings.deadzone) {
+        joystickVector.x = 0;
+        joystickVector.y = 0;
+      } else {
+        joystickVector.x = clampedX / maxJoyRadius;
+        joystickVector.y = clampedY / maxJoyRadius;
+      }
+    }
+
+    function handleJoystickEnd(e) {
+      if (vjoyPointerId === null) return;
+      if (e && e.pointerId && e.pointerId !== vjoyPointerId) return;
+      try { vjoyBase.releasePointerCapture(vjoyPointerId); } catch(err) {}
+      vjoyPointerId = null;
+      joystickVector.x = 0;
+      joystickVector.y = 0;
+      if (vjoyKnob) vjoyKnob.style.transform = 'translate(0px, 0px)';
+
+      // Hide if floating scheme
+      if (controlSettings.scheme === 'floating') {
+        vjoyContainer.style.display = 'none';
+      }
+    }
+
+    if (vjoyBase) {
+      vjoyBase.addEventListener('pointerdown', handleJoystickStart);
+      window.addEventListener('pointermove', e => {
+        if (vjoyPointerId !== null) updateJoystickPosition(e.clientX, e.clientY);
+      });
+      window.addEventListener('pointerup', handleJoystickEnd);
+      window.addEventListener('pointercancel', handleJoystickEnd);
+    }
+
+    // Touch D-Pad Directional Buttons
+    const bindDpad = (btnId, keyName) => {
+      const el = document.getElementById(btnId);
+      if (!el) return;
+      const start = (e) => {
+        window.focus();
+        e.preventDefault();
+        state.navTarget = null;
+        targetRingMesh.visible = false;
+        keys[keyName] = true;
+        el.classList.add('pressed');
+      };
+      const stop = (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+        el.classList.remove('pressed');
+      };
+      el.addEventListener('pointerdown', start);
+      el.addEventListener('pointerup', stop);
+      el.addEventListener('pointercancel', stop);
+      el.addEventListener('pointerleave', stop);
+    };
+
+    bindDpad('dpad-up', 'forward');
+    bindDpad('dpad-down', 'backward');
+    bindDpad('dpad-left', 'left');
+    bindDpad('dpad-right', 'right');
+
+    // Touch Camera Orbit Drag & Pinch Zoom & Click-to-Move
+    let isCameraPointerDown = false;
+    let cameraPointerOrigin = { x: 0, y: 0 };
+    let cameraPointerStartTime = 0;
+
+    lookZone.addEventListener('pointerdown', e => {
+      window.focus();
+
+      // Check movement zone depending on handedness
+      const isLeftMovementZone = controlSettings.handedness === 'right_handed'
+        ? (e.clientX < window.innerWidth * 0.42 && e.clientY > window.innerHeight * 0.4)
+        : (e.clientX > window.innerWidth * 0.58 && e.clientY > window.innerHeight * 0.4);
+
+      if (isLeftMovementZone && (controlSettings.scheme === 'hybrid' || controlSettings.scheme === 'joystick' || controlSettings.scheme === 'floating')) {
+        handleJoystickStart(e);
+        return;
+      }
+
+      isCameraPointerDown = true;
+      cameraPointerOrigin = { x: e.clientX, y: e.clientY };
+      cameraPointerStartTime = Date.now();
+    });
+
+    window.addEventListener('pointermove', e => {
+      if (!isCameraPointerDown) return;
+      const dx = (e.clientX - cameraPointerOrigin.x) * 0.0055 * controlSettings.cameraSensitivity;
+      const dy = (e.clientY - cameraPointerOrigin.y) * 0.0055 * controlSettings.cameraSensitivity * (controlSettings.invertY ? -1 : 1);
+      state.targetYaw -= dx;
+      state.targetPitch = Math.max(CONFIG.camera.minPitch, Math.min(CONFIG.camera.maxPitch, state.targetPitch - dy));
+      cameraPointerOrigin = { x: e.clientX, y: e.clientY };
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      if (isCameraPointerDown) {
+        const tapDuration = Date.now() - cameraPointerStartTime;
+        const dragDist = Math.hypot(e.clientX - cameraPointerOrigin.x, e.clientY - cameraPointerOrigin.y);
+
+        // Click-to-move detection on short tap
+        if (controlSettings.scheme === 'tap_to_move' && tapDuration < 300 && dragDist < 8) {
+          const mouse = new THREE.Vector2(
+            (e.clientX / window.innerWidth) * 2 - 1,
+            -(e.clientY / window.innerHeight) * 2 + 1
+          );
+          raycaster.setFromCamera(mouse, camera);
+          const targets = state.inDungeon ? dungeonGroup.children : [overworldTerrain];
+          const hits = raycaster.intersectObjects(targets, true);
+          if (hits.length > 0) {
+            state.navTarget = hits[0].point.clone();
+            targetRingMesh.position.copy(state.navTarget);
+            targetRingMesh.position.y += 0.05;
+            targetRingMesh.visible = true;
+            targetRingMat.opacity = 1.0;
+            sound.playTone(720, 0.08, 'sine');
+          }
+        }
+      }
+      isCameraPointerDown = false;
+    });
+
+    window.addEventListener('pointercancel', () => { isCameraPointerDown = false; });
+
+    // Wheel zoom
+    window.addEventListener('wheel', e => {
+      state.cameraDistance = Math.max(CONFIG.camera.minDistance, Math.min(CONFIG.camera.maxDistance, state.cameraDistance + (e.deltaY > 0 ? 0.75 : -0.75)));
+    }, { passive: true });
+
+    // Touch Action Buttons
+    document.getElementById('btn-touch-atk').onclick = () => performMeleeAttack(WEAPONS[state.equippedWeapon]);
+    document.getElementById('btn-touch-cast').onclick = () => castPower(state.equippedPower);
+    document.getElementById('btn-touch-dodge').onclick = () => triggerDodgeRoll();
+    document.getElementById('btn-touch-radial').onclick = () => openRadialMenu();
+    document.getElementById('btn-enter-dungeon').onclick = () => enterDungeon();
+    document.getElementById('btn-tree-toggle').onclick = () => { renderTalentTree(); talentsModal.style.display = 'flex'; };
+    document.getElementById('btn-builder-toggle').onclick = () => openBuilder();
+    document.getElementById('btn-close-talents').onclick = () => { talentsModal.style.display = 'none'; };
+    document.getElementById('btn-close-builder').onclick = () => closeBuilder();
+    document.getElementById('btn-flight-toggle').onclick = () => castPower('flight');
+
+    function triggerDodgeRoll() {
+      if (state.isDodging) return;
+      state.isDodging = true;
+      state.dodgeTimer = 0.4;
+      sound.playTone(400, 0.15, 'triangle');
+    }
+
+    function handleInteraction() {
+      if (state.portalNearby) {
+        enterDungeon();
+      }
+    }
+
+    function enterDungeon() {
+      sound.init();
+      state.inDungeon = true;
+      state.navTarget = null;
+      targetRingMesh.visible = false;
+      overworldGroup.visible = false;
+      dungeonGroup.visible = true;
+      generateDungeon(state.portalNearby ? state.portalNearby.theme : 'crypt');
+      playerGroup.position.set(0, 0, 0);
+      document.getElementById('dungeon-prompt').style.display = 'none';
+      document.getElementById('biome-label').innerText = 'Dungeon: Lvl 1';
+      sound.roar();
+    }
+
+    function exitDungeon() {
+      state.inDungeon = false;
+      state.navTarget = null;
+      targetRingMesh.visible = false;
+      overworldGroup.visible = true;
+      dungeonGroup.visible = false;
+      playerGroup.position.set(-18, getOverworldHeight(-18, -20) + 1, -20);
+      document.getElementById('biome-label').innerText = 'Overworld Frontier';
+      document.getElementById('boss-container').style.display = 'none';
+      sound.levelUp();
+    }
+
+    // ----------------------------------------------------
+    // 13. HUD & HOTBAR
+    // ----------------------------------------------------
+    function renderHotbar() {
+      const bar = document.getElementById('hotbar-slots');
+      bar.innerHTML = '';
+      state.hotbar.forEach((id, idx) => {
+        const isWep = !!WEAPONS[id];
+        const item = isWep ? WEAPONS[id] : POWERS[id];
+        if (!item) return;
+
+        const slot = document.createElement('div');
+        const isActive = isWep ? (state.equippedWeapon === id) : (state.equippedPower === id);
+        slot.className = `hotbar-slot ${isActive ? 'active' : ''}`;
+        slot.innerHTML = `
+          <span class="key">${idx + 1}</span>
+          <span>${isWep ? '⚔️' : '✨'}</span>
+          <span style="font-size: 8px;">${item.name.split(' ')[0]}</span>
+          ${isWep ? '<div class="durability"></div>' : ''}
+        `;
+        slot.onclick = () => selectRadialItem(id);
+        bar.appendChild(slot);
+      });
+    }
+    renderHotbar();
+
+    function updateStatsUI() {
+      document.getElementById('hp-bar').style.width = (state.hp / state.maxHp) * 100 + '%';
+      document.getElementById('mp-bar').style.width = (state.mp / state.maxMp) * 100 + '%';
+      document.getElementById('hp-val').innerText = Math.round(state.hp);
+      document.getElementById('mp-val').innerText = Math.round(state.mp);
+      document.getElementById('chip-wood').innerText = state.wood;
+      document.getElementById('chip-stone').innerText = state.stone;
+      document.getElementById('chip-crystal').innerText = state.crystal;
+      document.getElementById('chip-gold').innerText = state.gold;
+    }
+
+    function updateComboUI() {
+      const el = document.getElementById('combo-label');
+      if (state.comboCount > 1) {
+        el.style.display = 'block';
+        el.innerText = `COMBO x${state.comboCount}!`;
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    // ----------------------------------------------------
+    // 14. MINIMAP RADAR
+    // ----------------------------------------------------
+    const minimapCanvas = document.getElementById('minimap-canvas');
+    const mmCtx = minimapCanvas.getContext('2d');
+
+    function renderMinimap() {
+      const w = 105, h = 105, cx = 52.5, cy = 52.5;
+      mmCtx.clearRect(0, 0, w, h);
+      mmCtx.fillStyle = '#090d16';
+      mmCtx.fillRect(0, 0, w, h);
+
+      if (!state.inDungeon) {
+        portals.forEach(p => {
+          const rx = cx + (p.x - playerGroup.position.x) * 1.5;
+          const ry = cy + (p.z - playerGroup.position.z) * 1.5;
+          mmCtx.fillStyle = '#a855f7';
+          mmCtx.beginPath(); mmCtx.arc(rx, ry, 4, 0, Math.PI*2); mmCtx.fill();
+        });
+      } else if (currentDungeon) {
+        currentDungeon.rooms.forEach(r => {
+          const rx = cx + (r.x * 4 - playerGroup.position.x) * 1.2;
+          const ry = cy + (r.z * 4 - playerGroup.position.z) * 1.2;
+          mmCtx.fillStyle = r.type === 'boss' ? '#881337' : (r.type === 'treasure' ? '#d97706' : '#334155');
+          mmCtx.fillRect(rx - 6, ry - 6, 12, 12);
+        });
+      }
+
+      // Player Indicator
+      mmCtx.save();
+      mmCtx.translate(cx, cy);
+      mmCtx.rotate(-playerGroup.rotation.y);
+      mmCtx.fillStyle = '#38bdf8';
+      mmCtx.beginPath();
+      mmCtx.moveTo(0, -6); mmCtx.lineTo(4, 5); mmCtx.lineTo(-4, 5);
+      mmCtx.fill();
+      mmCtx.restore();
+    }
+
+    // Apply initial control layout settings on startup
+    applyControlLayout();
+
+    // ----------------------------------------------------
+    // 15. MAIN GAME LOOP & PRO MOVEMENT SYSTEM
+    // ----------------------------------------------------
+    const clock = new THREE.Clock();
+    let swingProgress = 0;
+    let walkCycle = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const rawDt = clock.getDelta();
+      const dt = Math.min(rawDt, 0.05) * state.timeScale;
+
+      // Mana Regen
+      if (state.mp < state.maxMp) {
+        state.mp = Math.min(state.maxMp, state.mp + (5 + state.talents.mage * 2) * dt);
+        updateStatsUI();
+      }
+
+      // Combo Decay
+      if (state.comboTimer > 0) {
+        state.comboTimer -= dt;
+        if (state.comboTimer <= 0) {
+          state.comboCount = 0;
+          updateComboUI();
+        }
+      }
+
+      // Dodge Roll
+      if (state.isDodging) {
+        state.dodgeTimer -= dt;
+        if (state.dodgeTimer <= 0) state.isDodging = false;
+      }
+
+      // Camera Damping
+      state.yaw = THREE.MathUtils.damp(state.yaw, state.targetYaw, 16, dt);
+      state.pitch = THREE.MathUtils.damp(state.pitch, state.targetPitch, 16, dt);
+
+      // Movement Vector Calculation
+      let moveFwd = 0;
+      let moveRight = 0;
+
+      if (keys['forward']) moveFwd += 1;
+      if (keys['backward']) moveFwd -= 1;
+      if (keys['right']) moveRight += 1;
+      if (keys['left']) moveRight -= 1;
+
+      // Add analog joystick displacement
+      moveFwd -= joystickVector.y;
+      moveRight += joystickVector.x;
+
+      const inputMag = Math.hypot(moveFwd, moveRight);
+      let isMoving = false;
+      let currentSpeed = 0;
+      let currentTurnDiff = 0;
+
+      // 1. Direct Input (Keys + Joystick + Dpad)
+      if (inputMag > 0.04) {
+        state.navTarget = null;
+        targetRingMesh.visible = false;
+
+        const normFwd = moveFwd / Math.max(1, inputMag);
+        const normRight = moveRight / Math.max(1, inputMag);
+
+        const fwdX = -Math.sin(state.yaw);
+        const fwdZ = -Math.cos(state.yaw);
+        const rightX = Math.cos(state.yaw);
+        const rightZ = -Math.sin(state.yaw);
+
+        const worldX = fwdX * normFwd + rightX * normRight;
+        const worldZ = fwdZ * normFwd + rightZ * normRight;
+
+        const targetAngle = Math.atan2(worldX, worldZ);
+        playerGroup.rotation.y = THREE.MathUtils.damp(playerGroup.rotation.y, targetAngle, CONFIG.player.turnSpeed, dt);
+
+        currentTurnDiff = Math.sin(targetAngle - playerGroup.rotation.y);
+        bones.pelvis.rotation.z = THREE.MathUtils.damp(bones.pelvis.rotation.z, currentTurnDiff * -0.22, 10, dt);
+
+        const isSprinting = controlSettings.autoSprint || keys['ShiftLeft'] || keys['shift'];
+        currentSpeed = (isSprinting ? CONFIG.player.sprintSpeed : CONFIG.player.speed) * (state.isDodging ? 1.7 : 1.0);
+        playerGroup.position.x += worldX * currentSpeed * dt;
+        playerGroup.position.z += worldZ * currentSpeed * dt;
+
+        walkCycle += dt * 14;
+        isMoving = true;
+      }
+      // 2. Click-to-Move Target Navigation
+      else if (state.navTarget && controlSettings.scheme === 'tap_to_move') {
+        const tDx = state.navTarget.x - playerGroup.position.x;
+        const tDz = state.navTarget.z - playerGroup.position.z;
+        const tDist = Math.hypot(tDx, tDz);
+
+        if (tDist > 0.45) {
+          const nX = tDx / tDist;
+          const nZ = tDz / tDist;
+          const targetAngle = Math.atan2(nX, nZ);
+          playerGroup.rotation.y = THREE.MathUtils.damp(playerGroup.rotation.y, targetAngle, CONFIG.player.turnSpeed, dt);
+
+          currentTurnDiff = Math.sin(targetAngle - playerGroup.rotation.y);
+          const isSprinting = controlSettings.autoSprint || keys['shift'];
+          currentSpeed = (isSprinting ? CONFIG.player.sprintSpeed : CONFIG.player.speed) * (state.isDodging ? 1.7 : 1.0);
+          playerGroup.position.x += nX * currentSpeed * dt;
+          playerGroup.position.z += nZ * currentSpeed * dt;
+
+          walkCycle += dt * 14;
+          isMoving = true;
+
+          // Pulse destination ring
+          targetRingMesh.rotation.z += dt * 2.5;
+          targetRingMat.opacity = Math.sin(clock.getElapsedTime() * 8) * 0.3 + 0.65;
+        } else {
+          state.navTarget = null;
+          targetRingMesh.visible = false;
+        }
+      }
+
+      if (!isMoving) {
+        walkCycle = 0;
+        bones.pelvis.rotation.z = THREE.MathUtils.damp(bones.pelvis.rotation.z, 0, 10, dt);
+      }
+
+      // Terrain Clamping / Flight height
+      if (state.isFlight) {
+        if (keys['Space'] || keys[' ']) playerGroup.position.y += 6 * dt;
+        if (keys['KeyC'] || keys['c']) playerGroup.position.y -= 6 * dt;
+      } else if (!state.inDungeon) {
+        const groundY = getOverworldHeight(playerGroup.position.x, playerGroup.position.z);
+        playerGroup.position.y = THREE.MathUtils.damp(playerGroup.position.y, groundY, 20, dt);
+      } else {
+        playerGroup.position.y = 0;
+      }
+
+      // ----------------------------------------------------
+      // NUANCED MULTI-POINT CLOTH PHYSICS SIMULATION
+      // ----------------------------------------------------
+      updateClothPhysics(dt, isMoving, walkCycle, currentSpeed, currentTurnDiff);
+
+      // ----------------------------------------------------
+      // SECONDARY GEAR PHYSICS (Tassets, Scabbard, Aegis, Core)
+      // ----------------------------------------------------
+      if (bones.tasset_L && bones.tasset_R) {
+        if (isMoving) {
+          const legSwing = Math.sin(walkCycle) * 0.75;
+          bones.tasset_L.rotation.x = Math.max(-0.25, -legSwing * 0.55);
+          bones.tasset_R.rotation.x = Math.max(-0.25, legSwing * 0.55);
+          bones.tasset_L.rotation.z = Math.sin(walkCycle) * 0.05 - 0.08;
+          bones.tasset_R.rotation.z = -Math.sin(walkCycle) * 0.05 + 0.08;
+        } else {
+          bones.tasset_L.rotation.x = THREE.MathUtils.damp(bones.tasset_L.rotation.x, 0, 8, dt);
+          bones.tasset_R.rotation.x = THREE.MathUtils.damp(bones.tasset_R.rotation.x, 0, 8, dt);
+          bones.tasset_L.rotation.z = -0.08;
+          bones.tasset_R.rotation.z = 0.08;
+        }
+      }
+
+      if (bones.scabbard) {
+        const scabbardBob = isMoving ? Math.sin(walkCycle * 2) * 0.06 - 0.12 : -0.12 + Math.sin(clock.getElapsedTime() * 2) * 0.02;
+        bones.scabbard.rotation.x = THREE.MathUtils.damp(bones.scabbard.rotation.x, scabbardBob, 10, dt);
+      }
+
+      if (bones.shieldRune) {
+        bones.shieldRune.rotation.z += dt * 1.5;
+      }
+
+      if (bones.coreLight) {
+        bones.coreLight.intensity = 1.3 + Math.sin(clock.getElapsedTime() * 4) * 0.35;
+      }
+
+      // 17-Bone Skeletal Animation Walk & Idle Cycles
+      if (bones.thigh_L && bones.thigh_R) {
+        if (isMoving) {
+          const legSwing = Math.sin(walkCycle) * 0.75;
+          bones.thigh_L.rotation.x = legSwing;
+          bones.thigh_R.rotation.x = -legSwing;
+          bones.shin_L.rotation.x = Math.max(0, -legSwing * 0.85);
+          bones.shin_R.rotation.x = Math.max(0, legSwing * 0.85);
+          bones.upper_arm_L.rotation.x = -legSwing * 0.6;
+        } else {
+          const breath = Math.sin(clock.getElapsedTime() * 2) * 0.035;
+          bones.spine_upper.position.y = 0.28 + breath;
+          bones.thigh_L.rotation.x = 0;
+          bones.thigh_R.rotation.x = 0;
+          bones.shin_L.rotation.x = 0;
+          bones.shin_R.rotation.x = 0;
+        }
+
+        // Sword Swing Arc
+        if (swingProgress > 0) {
+          swingProgress += dt * 4.8;
+          bones.upper_arm_R.rotation.x = -1.2 + Math.sin(swingProgress * Math.PI) * 2.1;
+          bones.upper_arm_R.rotation.y = Math.sin(swingProgress * Math.PI) * 0.95;
+          slashTrailMat.opacity = Math.sin(swingProgress * Math.PI) * 0.85;
+          if (swingProgress >= 1) {
+            swingProgress = 0;
+            slashTrailMat.opacity = 0;
+          }
+        } else {
+          bones.upper_arm_R.rotation.set(0, 0, 0);
+          slashTrailMat.opacity = 0;
+        }
+      }
+
+      // Camera Positioning
+      const camTarget = playerGroup.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const cx = camTarget.x + Math.sin(state.yaw) * Math.cos(state.pitch) * state.cameraDistance;
+      const cy = camTarget.y - Math.sin(state.pitch) * state.cameraDistance;
+      const cz = camTarget.z + Math.cos(state.yaw) * Math.cos(state.pitch) * state.cameraDistance;
+      camera.position.set(cx, Math.max(cy, camTarget.y + 0.4), cz);
+      camera.lookAt(camTarget);
+
+      // Animate Motes in Overworld
+      if (!state.inDungeon && motesMesh) {
+        const mPos = motesMesh.geometry.attributes.position;
+        for (let i = 0; i < motesCount; i++) {
+          let y = mPos.getY(i) + dt * 0.6;
+          if (y > 7.5) y = 0.5;
+          mPos.setY(i, y);
+        }
+        motesMesh.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Animate Portal Vortexes
+      portals.forEach(p => {
+        if (p.vortex) p.vortex.rotation.z += dt * 0.8;
+      });
+
+      // Projectiles Tick
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.life -= dt;
+        p.mesh.position.addScaledVector(p.dir, p.speed * dt);
+
+        const targets = state.inDungeon ? dungeonEnemies : [];
+        for (const tgt of targets) {
+          if (tgt.mesh.position.distanceTo(p.mesh.position) < 1.5) {
+            tgt.hp -= p.dmg;
+            spawnFloatingNumber(`-${p.dmg}`, tgt.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)), '#38bdf8');
+            p.life = 0;
+            if (tgt.isBoss) updateBossHp();
+            if (tgt.hp <= 0) handleEnemyDeath(tgt);
+            break;
+          }
+        }
+
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          projectiles.splice(i, 1);
+        }
+      }
+
+      // Dungeon AI Tick
+      if (state.inDungeon) {
+        dungeonEnemies.forEach(e => {
+          const dist = e.mesh.position.distanceTo(playerGroup.position);
+          if (dist > 1.3 && dist < 20) {
+            const chaseDir = playerGroup.position.clone().sub(e.mesh.position).normalize();
+            e.mesh.position.addScaledVector(chaseDir, e.speed * dt);
+            e.mesh.lookAt(playerGroup.position);
+          } else if (dist <= 1.6 && !state.isDodging) {
+            state.hp = Math.max(0, state.hp - 14 * dt);
+            updateStatsUI();
+            if (state.hp <= 0) {
+              state.hp = state.maxHp;
+              playerGroup.position.set(0, 0, 0);
+              spawnFloatingNumber('YOU DIED', playerGroup.position, '#ef4444');
+            }
+          }
+        });
+      } else {
+        // Portal proximity check
+        state.portalNearby = null;
+        portals.forEach(p => {
+          if (playerGroup.position.distanceTo(new THREE.Vector3(p.x, getOverworldHeight(p.x, p.z), p.z)) < 4.0) {
+            state.portalNearby = p;
+          }
+        });
+        const prompt = document.getElementById('dungeon-prompt');
+        if (state.portalNearby) {
+          prompt.style.display = 'block';
+          document.getElementById('portal-title').innerText = state.portalNearby.name;
+        } else {
+          prompt.style.display = 'none';
+        }
+      }
+
+      renderMinimap();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+  })();
+  </script>
+</body>
+</html>

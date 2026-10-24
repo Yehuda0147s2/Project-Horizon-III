@@ -1,0 +1,6 @@
+{
+  "name": "Project Horizon - Touch Camera & 3D Survival Builder",
+  "description": "Production-grade touch camera controller, mobile gesture layer, and 3D survival builder with desktop parity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
